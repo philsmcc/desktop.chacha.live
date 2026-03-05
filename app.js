@@ -192,6 +192,29 @@ class DesktopOS {
             this.handleLogin();
         });
 
+        // Auth tab switching
+        document.querySelectorAll(".auth-tab").forEach(tab => {
+            tab.addEventListener("click", () => {
+                document.querySelectorAll(".auth-tab").forEach(t => t.classList.remove("active"));
+                tab.classList.add("active");
+                
+                const tabName = tab.dataset.tab;
+                if (tabName === "login") {
+                    document.getElementById("login-form").classList.remove("hidden");
+                    document.getElementById("register-form").classList.add("hidden");
+                } else {
+                    document.getElementById("login-form").classList.add("hidden");
+                    document.getElementById("register-form").classList.remove("hidden");
+                }
+            });
+        });
+
+        // Registration form
+        document.getElementById("register-form").addEventListener("submit", (e) => {
+            e.preventDefault();
+            this.handleRegister();
+        });
+
         document.getElementById("logout-btn").addEventListener("click", () => {
             this.handleLogout();
         });
@@ -412,6 +435,76 @@ class DesktopOS {
         } finally {
             loginBtn.disabled = false;
             loginBtn.innerHTML = '<span>Sign In</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>';
+        }
+    }
+
+    async handleRegister() {
+        const username = document.getElementById("reg-username").value.trim();
+        const email = document.getElementById("reg-email").value.trim();
+        const password = document.getElementById("reg-password").value;
+        const confirm = document.getElementById("reg-confirm").value;
+        const errorDiv = document.getElementById("register-error");
+        const registerBtn = document.querySelector(".register-btn");
+
+        // Validation
+        if (!username || !password) {
+            errorDiv.textContent = "Username and password are required";
+            return;
+        }
+
+        if (username.length < 3) {
+            errorDiv.textContent = "Username must be at least 3 characters";
+            return;
+        }
+
+        if (password.length < 6) {
+            errorDiv.textContent = "Password must be at least 6 characters";
+            return;
+        }
+
+        if (password !== confirm) {
+            errorDiv.textContent = "Passwords do not match";
+            return;
+        }
+
+        registerBtn.disabled = true;
+        registerBtn.innerHTML = '<span>Creating account...</span>';
+
+        try {
+            const response = await fetch("https://desktop.chacha.live/api/auth/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password, email: email || undefined })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || "Registration failed");
+            }
+
+            const data = await response.json();
+
+            // Auto-login after successful registration
+            this.token = data.token;
+            this.currentUser = data.user;
+            
+            localStorage.setItem("hovercam_token", this.token);
+            localStorage.setItem("hovercam_session", JSON.stringify(this.currentUser));
+            
+            // Clean up old shared whiteboard data
+            localStorage.removeItem('hovercam_whiteboard_canvas');
+            localStorage.removeItem('hovercam_whiteboard_bgColor');
+            localStorage.removeItem('hovercam_whiteboard_objects');
+            
+            errorDiv.textContent = "";
+            await this.loadUserPreferences();
+            this.showDesktop();
+            this.showNotification("Welcome to HoverCam Desktop, " + username + "!", "success");
+        } catch (error) {
+            errorDiv.textContent = error.message || "Registration failed";
+        } finally {
+            registerBtn.disabled = false;
+            registerBtn.innerHTML = '<span>Create Account</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
         }
     }
 
