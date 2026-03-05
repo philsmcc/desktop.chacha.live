@@ -2485,15 +2485,13 @@ class DesktopOS {
         
         const video = app.querySelector('.camera-video');
         const canvas = app.querySelector('.camera-canvas');
-        const dragOverlay = app.querySelector('.camera-drag-overlay');
-        const viewport = app.querySelector('.camera-viewport');
-        const toolbar = app.querySelector('.camera-toolbar-mini');
+        const optionsBtn = app.querySelector('.camera-options-btn');
+        const optionsMenu = app.querySelector('.camera-options-menu');
         const sourceSelect = app.querySelector('.camera-source-select');
         
         let stream = null;
-        let rotation = 90; // Default 90° for document cameras
+        let rotation = 90;
         let mirrored = false;
-        let currentDeviceId = null;
         
         const updateTransform = () => {
             const transforms = [];
@@ -2504,160 +2502,112 @@ class DesktopOS {
         
         const loadCameraSources = async () => {
             try {
-                // First request permission to enumerate devices
                 await navigator.mediaDevices.getUserMedia({ video: true });
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(d => d.kind === 'videoinput');
                 
                 sourceSelect.innerHTML = '';
-                if (videoDevices.length === 0) {
-                    sourceSelect.innerHTML = '<option value="">No cameras found</option>';
-                    return null;
-                }
-                
-                videoDevices.forEach((device, index) => {
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.textContent = device.label || `Camera ${index + 1}`;
-                    sourceSelect.appendChild(option);
+                videoDevices.forEach((device, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = device.deviceId;
+                    opt.textContent = device.label || `Camera ${i + 1}`;
+                    sourceSelect.appendChild(opt);
                 });
                 
-                return videoDevices[0].deviceId;
+                return videoDevices[0]?.deviceId;
             } catch (err) {
-                console.error('Error loading cameras:', err);
-                sourceSelect.innerHTML = '<option value="">Camera access denied</option>';
+                sourceSelect.innerHTML = '<option>No access</option>';
                 return null;
             }
         };
         
         const startCamera = async (deviceId) => {
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            
             try {
-                // Stop existing stream
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                }
-                
-                const constraints = {
-                    video: {
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    }
-                };
-                
-                if (deviceId) {
-                    constraints.video.deviceId = { exact: deviceId };
-                }
+                const constraints = { video: { width: { ideal: 1920 }, height: { ideal: 1080 } } };
+                if (deviceId) constraints.video.deviceId = { exact: deviceId };
                 
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 video.play();
-                currentDeviceId = deviceId;
                 updateTransform();
             } catch (err) {
-                console.error('Camera error:', err);
-                this.showNotification('Camera error: ' + err.message, 'error');
+                this.showNotification('Camera error', 'error');
             }
-        };
-        
-        const stopCamera = () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-            video.srcObject = null;
         };
         
         const captureSnapshot = () => {
             if (!stream) return null;
-            
             const ctx = canvas.getContext('2d');
-            const vw = video.videoWidth;
-            const vh = video.videoHeight;
+            const vw = video.videoWidth, vh = video.videoHeight;
             
-            if (rotation === 90 || rotation === 270) {
-                canvas.width = vh;
-                canvas.height = vw;
-            } else {
-                canvas.width = vw;
-                canvas.height = vh;
-            }
+            canvas.width = (rotation === 90 || rotation === 270) ? vh : vw;
+            canvas.height = (rotation === 90 || rotation === 270) ? vw : vh;
             
             ctx.save();
             ctx.translate(canvas.width / 2, canvas.height / 2);
             ctx.rotate(rotation * Math.PI / 180);
             if (mirrored) ctx.scale(-1, 1);
-            ctx.drawImage(video, -vw / 2, -vh / 2, vw, vh);
+            ctx.drawImage(video, -vw / 2, -vh / 2);
             ctx.restore();
             
             return canvas.toDataURL('image/jpeg', 0.9);
         };
         
-        // Camera source change
-        sourceSelect.addEventListener('change', (e) => {
-            if (e.target.value) {
-                startCamera(e.target.value);
-            }
+        // Options toggle
+        optionsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            optionsMenu.classList.toggle('hidden');
         });
         
-        // Toolbar button handlers
-        toolbar.addEventListener('click', (e) => {
-            const btn = e.target.closest('.camera-mini-btn');
+        app.addEventListener('click', () => optionsMenu.classList.add('hidden'));
+        optionsMenu.addEventListener('click', (e) => e.stopPropagation());
+        
+        // Source change
+        sourceSelect.addEventListener('change', (e) => startCamera(e.target.value));
+        
+        // Option buttons
+        optionsMenu.addEventListener('click', (e) => {
+            const btn = e.target.closest('.camera-opt-btn');
             if (!btn) return;
             
             const action = btn.dataset.action;
-            
-            if (action === 'snapshot') {
+            if (action === 'rotate') {
+                rotation = (rotation + 90) % 360;
+                updateTransform();
+            } else if (action === 'mirror') {
+                mirrored = !mirrored;
+                btn.classList.toggle('active', mirrored);
+                updateTransform();
+            } else if (action === 'snapshot') {
                 const dataUrl = captureSnapshot();
                 if (dataUrl) {
                     const link = document.createElement('a');
                     link.download = `snapshot-${Date.now()}.jpg`;
                     link.href = dataUrl;
                     link.click();
-                    this.showNotification('Snapshot saved', 'success');
                 }
-            } else if (action === 'rotate') {
-                rotation = (rotation + 90) % 360;
-                updateTransform();
-                btn.title = `Rotate (${rotation}°)`;
-            } else if (action === 'mirror') {
-                mirrored = !mirrored;
-                btn.classList.toggle('active', mirrored);
-                updateTransform();
             }
         });
         
-        // Make viewport draggable
-        viewport.draggable = true;
-        viewport.addEventListener('dragstart', (e) => {
-            if (!stream) {
-                e.preventDefault();
-                return;
-            }
+        // Drag support
+        video.draggable = true;
+        video.addEventListener('dragstart', (e) => {
             const dataUrl = captureSnapshot();
             if (dataUrl) {
                 e.dataTransfer.setData('text/uri-list', dataUrl);
-                e.dataTransfer.setData('text/plain', dataUrl);
                 e.dataTransfer.setData('application/x-camera-snapshot', dataUrl);
-                e.dataTransfer.effectAllowed = 'copy';
-                dragOverlay.classList.remove('hidden');
             }
         });
         
-        viewport.addEventListener('dragend', () => {
-            dragOverlay.classList.add('hidden');
-        });
-        
-        // Store cleanup function
+        // Cleanup
         windowEl.cameraCleanup = () => {
-            stopCamera();
+            if (stream) stream.getTracks().forEach(t => t.stop());
         };
         
-        // Auto-start: load sources and start first camera
-        loadCameraSources().then(deviceId => {
-            if (deviceId) {
-                startCamera(deviceId);
-            }
-        });
+        // Auto-start
+        loadCameraSources().then(id => id && startCamera(id));
     }
 
 
@@ -2993,27 +2943,22 @@ class DesktopOS {
 
 
     renderCameraApp() {
-        return '<div class="camera-app" data-app-id="camera">' +
-            '<div class="camera-viewport">' +
-                '<video class="camera-video" autoplay playsinline></video>' +
-                '<canvas class="camera-canvas" style="display:none;"></canvas>' +
-                '<div class="camera-drag-overlay hidden">' +
-                    '<span>Drop to save</span>' +
-                '</div>' +
+        return '<div class="camera-app">' +
+            '<video class="camera-video" autoplay playsinline></video>' +
+            '<canvas class="camera-canvas"></canvas>' +
+            '<div class="camera-options-btn" title="Options">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>' +
             '</div>' +
-            '<div class="camera-toolbar-mini">' +
-                '<select class="camera-source-select" title="Select Camera">' +
-                    '<option value="">Loading cameras...</option>' +
-                '</select>' +
-                '<button class="camera-mini-btn" data-action="snapshot" title="Snapshot">' +
-                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>' +
-                '</button>' +
-                '<button class="camera-mini-btn" data-action="rotate" title="Rotate 90°">' +
-                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>' +
-                '</button>' +
-                '<button class="camera-mini-btn" data-action="mirror" title="Mirror">' +
-                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg>' +
-                '</button>' +
+            '<div class="camera-options-menu hidden">' +
+                '<div class="camera-option-group">' +
+                    '<label>Camera</label>' +
+                    '<select class="camera-source-select"><option>Loading...</option></select>' +
+                '</div>' +
+                '<div class="camera-option-row">' +
+                    '<button class="camera-opt-btn" data-action="rotate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg><span>Rotate</span></button>' +
+                    '<button class="camera-opt-btn" data-action="mirror"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg><span>Mirror</span></button>' +
+                    '<button class="camera-opt-btn" data-action="snapshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg><span>Snap</span></button>' +
+                '</div>' +
             '</div>' +
         '</div>';
     }

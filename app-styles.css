@@ -1723,126 +1723,137 @@ body.dark-mode .desktop-icon-label {
 
 /* ==================== CAMERA APP ==================== */
 .camera-app {
-    display: flex;
-    flex-direction: column;
+    position: relative;
+    width: 100%;
     height: 100%;
     background: #000;
-}
-
-.camera-viewport {
-    flex: 1;
-    position: relative;
     overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: grab;
-    min-height: 0;
-}
-
-.camera-viewport:active {
-    cursor: grabbing;
 }
 
 .camera-video {
     width: 100%;
     height: 100%;
     object-fit: contain;
-    background: #000;
+    cursor: grab;
 }
 
-.camera-drag-overlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(255, 140, 0, 0.3);
-    border: 3px dashed #ff8c00;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    font-weight: 600;
-    color: #ff8c00;
-    pointer-events: none;
-    z-index: 10;
+.camera-video:active {
+    cursor: grabbing;
 }
 
-.camera-drag-overlay.hidden {
+.camera-canvas {
     display: none;
 }
 
-/* Minimal toolbar */
-.camera-toolbar-mini {
+/* Floating options button */
+.camera-options-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 6px;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 10;
+}
+
+.camera-app:hover .camera-options-btn {
+    opacity: 1;
+}
+
+.camera-options-btn:hover {
     background: rgba(0, 0, 0, 0.8);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.camera-options-btn svg {
+    width: 16px;
+    height: 16px;
+    color: white;
+}
+
+/* Options menu */
+.camera-options-menu {
+    position: absolute;
+    top: 40px;
+    right: 8px;
+    background: rgba(20, 20, 30, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 10px;
+    min-width: 160px;
+    z-index: 20;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.camera-options-menu.hidden {
+    display: none;
+}
+
+.camera-option-group {
+    margin-bottom: 10px;
+}
+
+.camera-option-group label {
+    display: block;
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
 }
 
 .camera-source-select {
-    flex: 1;
-    min-width: 0;
+    width: 100%;
     padding: 6px 8px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
     border-radius: 4px;
-    background: rgba(255, 255, 255, 0.1);
     color: white;
     font-size: 12px;
     cursor: pointer;
-    outline: none;
-}
-
-.camera-source-select:hover {
-    background: rgba(255, 255, 255, 0.15);
 }
 
 .camera-source-select option {
     background: #1a1a2e;
-    color: white;
 }
 
-.camera-mini-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
+.camera-option-row {
+    display: flex;
+    gap: 6px;
+}
+
+.camera-opt-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px;
+    background: rgba(255,255,255,0.1);
     border: none;
-    background: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
     color: white;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
+    transition: background 0.15s;
 }
 
-.camera-mini-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+.camera-opt-btn:hover {
+    background: rgba(255,255,255,0.2);
 }
 
-.camera-mini-btn.active {
+.camera-opt-btn.active {
     background: #ff8c00;
 }
 
-.camera-mini-btn svg {
-    width: 16px;
-    height: 16px;
+.camera-opt-btn svg {
+    width: 18px;
+    height: 18px;
 }
 
-.camera-mini-btn[data-action="snapshot"] {
-    background: #3b82f6;
-}
-
-.camera-mini-btn[data-action="snapshot"]:hover {
-    background: #2563eb;
-}
-
-/* Light mode */
-body:not(.dark-mode) .camera-app {
-    background: #222;
-}
-
-body:not(.dark-mode) .camera-toolbar-mini {
-    background: rgba(0, 0, 0, 0.7);
+.camera-opt-btn span {
+    font-size: 10px;
 }
