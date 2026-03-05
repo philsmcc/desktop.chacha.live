@@ -1730,7 +1730,8 @@ class DesktopOS {
 
         // Get coordinates from event (accounts for viewport pan/zoom)
         const getCoords = (e) => {
-            const containerRect = container.getBoundingClientRect();
+            // Use canvas bounding rect - it reflects the CSS transform
+            const canvasRect = canvas.getBoundingClientRect();
             let clientX, clientY;
             
             if (e.touches && e.touches.length > 0) {
@@ -1741,10 +1742,15 @@ class DesktopOS {
                 clientY = e.clientY;
             }
             
-            // Convert screen coords to canvas coords
+            // The canvas rect already accounts for scale, so we need to 
+            // convert from screen space to canvas space
+            // canvasRect.width = CANVAS_WIDTH * zoom, canvasRect.height = CANVAS_HEIGHT * zoom
+            const scaleX = CANVAS_WIDTH / canvasRect.width;
+            const scaleY = CANVAS_HEIGHT / canvasRect.height;
+            
             return {
-                x: (clientX - containerRect.left + state.viewX) / state.zoom,
-                y: (clientY - containerRect.top + state.viewY) / state.zoom
+                x: (clientX - canvasRect.left) * scaleX,
+                y: (clientY - canvasRect.top) * scaleY
             };
         };
 
