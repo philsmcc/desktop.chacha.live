@@ -2570,6 +2570,10 @@ class DesktopOS {
                 mirrored = !mirrored;
                 btn.classList.toggle('active', mirrored);
                 video.style.transform = mirrored ? 'scaleX(-1)' : '';
+            } else if (action === 'ontop') {
+                const isOnTop = windowEl.classList.toggle('always-on-top');
+                btn.classList.toggle('active', isOnTop);
+                windowEl.style.zIndex = isOnTop ? '99999' : '';
             } else if (action === 'snapshot') {
                 const dataUrl = captureSnapshot();
                 if (dataUrl) {
@@ -2946,6 +2950,7 @@ class DesktopOS {
                 '</div>' +
                 '<div class="camera-option-row">' +
                     '<button class="camera-opt-btn" data-action="mirror"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg><span>Mirror</span></button>' +
+                    '<button class="camera-opt-btn" data-action="ontop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg><span>On Top</span></button>' +
                     '<button class="camera-opt-btn" data-action="snapshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg><span>Snap</span></button>' +
                 '</div>' +
             '</div>' +
