@@ -1551,9 +1551,12 @@ class DesktopOS {
             ctx.drawImage(virtualCanvas, srcX, srcY, srcW, srcH, 0, 0, w, h);
         };
         
-        // Update viewport (just re-render)
+        // Update viewport (re-render canvas and transform object layer)
         const updateViewport = () => {
             renderViewport();
+            // Transform object layer to match viewport
+            objectLayer.style.transform = `translate(${-state.viewX}px, ${-state.viewY}px) scale(${state.zoom})`;
+            objectLayer.style.transformOrigin = '0 0';
         };
         
         // Convert screen coords to canvas coords
@@ -2179,25 +2182,29 @@ class DesktopOS {
             const img = new Image();
             img.onload = () => {
                 const containerRect = container.getBoundingClientRect();
-                const dropX = dropEvent.clientX - containerRect.left;
-                const dropY = dropEvent.clientY - containerRect.top;
+                const screenX = dropEvent.clientX - containerRect.left;
+                const screenY = dropEvent.clientY - containerRect.top;
                 
-                // Scale image to reasonable size (max 40% of canvas)
-                const maxWidth = containerRect.width * 0.4;
-                const maxHeight = containerRect.height * 0.4;
+                // Convert screen coords to virtual canvas coords
+                const dropX = (screenX / state.zoom) + (state.viewX / state.zoom);
+                const dropY = (screenY / state.zoom) + (state.viewY / state.zoom);
+                
+                // Scale image to reasonable size (max 400px, which is reasonable in virtual canvas)
+                const maxSize = 400;
                 let width = img.width;
                 let height = img.height;
                 
-                if (width > maxWidth) {
-                    height = height * (maxWidth / width);
-                    width = maxWidth;
-                }
-                if (height > maxHeight) {
-                    width = width * (maxHeight / height);
-                    height = maxHeight;
+                if (width > maxSize || height > maxSize) {
+                    if (width > height) {
+                        height = height * (maxSize / width);
+                        width = maxSize;
+                    } else {
+                        width = width * (maxSize / height);
+                        height = maxSize;
+                    }
                 }
                 
-                // Center on drop point
+                // Center on drop point (in virtual canvas coords)
                 const x = dropX - width / 2;
                 const y = dropY - height / 2;
                 
@@ -2240,6 +2247,13 @@ class DesktopOS {
         container.addEventListener('drop', (e) => {
             e.preventDefault();
             container.classList.remove('drag-over');
+            
+            // Check for camera snapshot
+            const cameraSnapshot = e.dataTransfer.getData('application/x-camera-snapshot');
+            if (cameraSnapshot) {
+                addImageAsObject(cameraSnapshot, e);
+                return;
+            }
             
             // Check for files from computer
             if (e.dataTransfer.files.length > 0) {
