@@ -2494,24 +2494,10 @@ class DesktopOS {
         let mirrored = false;
         
         const updateTransform = () => {
-            const isVertical = (rotation === 90 || rotation === 270);
             const transforms = [];
             if (rotation !== 0) transforms.push(`rotate(${rotation}deg)`);
             if (mirrored) transforms.push('scaleX(-1)');
-            video.style.transform = transforms.join(' ');
-            
-            // Swap dimensions when rotated 90/270
-            if (isVertical) {
-                video.style.width = '100vh';
-                video.style.height = '100vw';
-                video.style.maxWidth = app.offsetHeight + 'px';
-                video.style.maxHeight = app.offsetWidth + 'px';
-            } else {
-                video.style.width = '100%';
-                video.style.height = '100%';
-                video.style.maxWidth = '';
-                video.style.maxHeight = '';
-            }
+            app.style.transform = transforms.join(' ');
         };
         
         const loadCameraSources = async () => {
