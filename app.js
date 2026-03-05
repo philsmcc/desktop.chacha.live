@@ -1477,35 +1477,43 @@ class DesktopOS {
 
 
         // Resize canvas to fit container
+        let resizeTimeout;
         const resizeCanvas = () => {
-            const rect = container.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
-            
-            // Save current canvas as image
-            const tempImage = canvas.width > 0 && canvas.height > 0 ? canvas.toDataURL() : null;
-            const oldWidth = canvas.width;
-            const oldHeight = canvas.height;
-            
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
-            canvas.style.width = rect.width + 'px';
-            canvas.style.height = rect.height + 'px';
-            
-            ctx.scale(dpr, dpr);
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            
-            ctx.fillStyle = state.bgColor;
-            ctx.fillRect(0, 0, rect.width, rect.height);
-            
-            // Restore canvas content
-            if (tempImage && oldWidth > 0) {
-                const img = new Image();
-                img.onload = () => {
-                    ctx.drawImage(img, 0, 0, oldWidth / dpr, oldHeight / dpr);
-                };
-                img.src = tempImage;
-            }
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                const rect = container.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) return;
+                
+                const dpr = window.devicePixelRatio || 1;
+                const newW = rect.width * dpr;
+                const newH = rect.height * dpr;
+                
+                // Skip if size hasn't actually changed
+                if (canvas.width === newW && canvas.height === newH) return;
+                
+                // Create temp canvas to preserve content
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                tempCanvas.getContext('2d').drawImage(canvas, 0, 0);
+                
+                canvas.width = newW;
+                canvas.height = newH;
+                canvas.style.width = rect.width + 'px';
+                canvas.style.height = rect.height + 'px';
+                
+                ctx.scale(dpr, dpr);
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                ctx.fillStyle = state.bgColor;
+                ctx.fillRect(0, 0, rect.width, rect.height);
+                
+                // Restore content
+                if (tempCanvas.width > 0 && tempCanvas.height > 0) {
+                    ctx.drawImage(tempCanvas, 0, 0, tempCanvas.width / dpr, tempCanvas.height / dpr);
+                }
+            }, 50);
         };
 
         // Save state to history
