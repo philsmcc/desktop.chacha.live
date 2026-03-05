@@ -2139,9 +2139,11 @@ class DesktopOS {
             
             // Clear button
             modal.querySelector('.wb-confirm-yes').addEventListener('click', () => {
-                const rect = container.getBoundingClientRect();
-                ctx.fillStyle = state.bgColor;
-                ctx.fillRect(0, 0, rect.width, rect.height);
+                // Clear the VIRTUAL canvas (the actual drawing surface)
+                virtualCtx.fillStyle = state.bgColor;
+                virtualCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                // Update display
+                renderViewport();
                 // Clear persisted canvas
                 localStorage.removeItem(storageKey('canvas'));
                 // Clear objects
