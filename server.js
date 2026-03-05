@@ -72,10 +72,10 @@ const getUserPrefix = (username) => `users/${username}`;
 
 // Helper: Get default preferences
 const getDefaultPreferences = () => ({
-    theme: 'dark',
-    wallpaper: null,
-    wallpaperType: 'default', // 'default', 'custom', 'color'
-    wallpaperColor: '#0f0f1a',
+    theme: 'light',
+    wallpaper: 'gradient-light1',
+    wallpaperType: 'gradient',
+    wallpaperColor: '#f5f7fa',
     iconPositions: {},
     lastLogin: new Date().toISOString()
 });

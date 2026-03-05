@@ -5,11 +5,11 @@ class DesktopOS {
         this.token = null;
         this.windows = new Map();
         this.windowZIndex = 100;
-        this.darkMode = true;
+        this.darkMode = false;
         this.isFullscreen = false;
-        this.wallpaper = null;
+        this.wallpaper = 'gradient-light1';
         this.wallpaperType = 'gradient'; // gradient, image, color
-        this.wallpaperColor = '#0f0f1a';
+        this.wallpaperColor = '#f5f7fa';
         this.systemWallpapers = [];
         this.userWallpapers = [];
         this.iconPositions = {};
@@ -18,8 +18,14 @@ class DesktopOS {
         this.init();
     }
 
-    // Gradient wallpaper presets
+    // Gradient wallpaper presets - Light mode defaults first
     gradientPresets = [
+        { id: 'gradient-light1', name: 'Clean White', gradient: 'linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 50%, #dfe4ea 100%)' },
+        { id: 'gradient-light2', name: 'Soft Blue', gradient: 'linear-gradient(135deg, #e8f4fc 0%, #d4e9f7 50%, #c5dff0 100%)' },
+        { id: 'gradient-light3', name: 'Warm Cream', gradient: 'linear-gradient(135deg, #fdfbf7 0%, #f7f3eb 50%, #f0e9dc 100%)' },
+        { id: 'gradient-light4', name: 'Mint Fresh', gradient: 'linear-gradient(135deg, #e8f5f0 0%, #d4ece4 50%, #c5e3d8 100%)' },
+        { id: 'gradient-light5', name: 'Lavender', gradient: 'linear-gradient(135deg, #f3f0f7 0%, #e8e3f0 50%, #ddd6e8 100%)' },
+        { id: 'gradient-light6', name: 'Peach', gradient: 'linear-gradient(135deg, #fdf5f0 0%, #f7e8e0 50%, #f0dbd0 100%)' },
         { id: 'gradient1', name: 'Dark Ocean', gradient: 'linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%)' },
         { id: 'gradient2', name: 'Sunset', gradient: 'linear-gradient(135deg, #1a1a2e 0%, #2d1f3d 50%, #4a2545 100%)' },
         { id: 'gradient3', name: 'Aurora', gradient: 'linear-gradient(135deg, #0f1923 0%, #1a3a4a 50%, #0f4c5c 100%)' },
