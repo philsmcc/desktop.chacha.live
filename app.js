@@ -1347,25 +1347,29 @@ class DesktopOS {
                     '</button>' +
                 '</div>' +
                 '<div class="browser-actions">' +
-                    '<button class="browser-action-btn browser-clip-btn" data-action="clip" title="Clip Mode - Drag content to Whiteboard">' +
+                    '<button class="browser-action-btn browser-clip-btn" data-action="clip" title="Send Image to Whiteboard">' +
                         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+                    '</button>' +
+                '</div>' +
+            '</div>' +
+            // Clip banner - shows above iframe when in clip mode
+            '<div class="browser-clip-banner hidden">' +
+                '<div class="clip-banner-content">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+                    '<span>Paste image URL to add to Whiteboard:</span>' +
+                    '<input type="text" class="clip-url-input" placeholder="https://example.com/image.jpg">' +
+                    '<button class="clip-add-btn">Add to Whiteboard</button>' +
+                    '<button class="clip-close-btn" title="Close">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
                     '</button>' +
                 '</div>' +
             '</div>' +
             '<div class="browser-content">' +
                 '<iframe class="browser-iframe" src="https://www.wikipedia.org" sandbox="allow-same-origin allow-scripts allow-popups allow-forms"></iframe>' +
-                '<div class="browser-clip-overlay hidden">' +
-                    '<div class="clip-instructions">' +
-                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
-                        '<span>Clip Mode Active</span>' +
-                        '<p>Click on images to copy them to the Whiteboard</p>' +
-                        '<button class="clip-exit-btn">Exit Clip Mode</button>' +
-                    '</div>' +
-                '</div>' +
             '</div>' +
             '<div class="browser-status-bar">' +
                 '<span class="browser-status-text">Ready</span>' +
-                '<span class="browser-status-hint">Tip: Use Clip Mode to capture content for your Whiteboard</span>' +
+                '<span class="browser-status-hint">Tip: Right-click images → Copy Image Address, then use clip button to add to Whiteboard</span>' +
             '</div>' +
         '</div>';
     }
@@ -1375,10 +1379,11 @@ class DesktopOS {
         const iframe = windowEl.querySelector('.browser-iframe');
         const goBtn = windowEl.querySelector('.browser-go-btn');
         const statusText = windowEl.querySelector('.browser-status-text');
-        const clipOverlay = windowEl.querySelector('.browser-clip-overlay');
+        const clipBanner = windowEl.querySelector('.browser-clip-banner');
         const clipBtn = windowEl.querySelector('.browser-clip-btn');
-        const clipExitBtn = windowEl.querySelector('.clip-exit-btn');
-        let clipMode = false;
+        const clipUrlInput = windowEl.querySelector('.clip-url-input');
+        const clipAddBtn = windowEl.querySelector('.clip-add-btn');
+        const clipCloseBtn = windowEl.querySelector('.clip-close-btn');
 
         // Navigation
         const navigate = (url) => {
@@ -1432,27 +1437,49 @@ class DesktopOS {
             }
         });
 
-        // Clip mode toggle
+        // Clip banner toggle
         clipBtn.addEventListener('click', () => {
-            clipMode = !clipMode;
-            clipBtn.classList.toggle('active', clipMode);
-            clipOverlay.classList.toggle('hidden', !clipMode);
-            statusText.textContent = clipMode ? 'Clip Mode Active - Click images to capture' : 'Ready';
+            const isVisible = !clipBanner.classList.contains('hidden');
+            if (isVisible) {
+                clipBanner.classList.add('hidden');
+                clipBtn.classList.remove('active');
+            } else {
+                clipBanner.classList.remove('hidden');
+                clipBtn.classList.add('active');
+                clipUrlInput.focus();
+            }
         });
 
-        clipExitBtn.addEventListener('click', () => {
-            clipMode = false;
+        // Close clip banner
+        clipCloseBtn.addEventListener('click', () => {
+            clipBanner.classList.add('hidden');
             clipBtn.classList.remove('active');
-            clipOverlay.classList.add('hidden');
-            statusText.textContent = 'Ready';
         });
 
-        // Image paste functionality - listen for messages from iframe
-        window.addEventListener('message', (e) => {
-            if (e.data && e.data.type === 'clipImage' && clipMode) {
-                this.pasteImageToWhiteboard(e.data.src);
-                statusText.textContent = 'Image copied to Whiteboard!';
-                setTimeout(() => { statusText.textContent = 'Clip Mode Active'; }, 2000);
+        // Add image to whiteboard
+        const addImageToWhiteboard = () => {
+            const imageUrl = clipUrlInput.value.trim();
+            if (!imageUrl) {
+                statusText.textContent = 'Please enter an image URL';
+                return;
+            }
+            
+            statusText.textContent = 'Adding image to Whiteboard...';
+            this.pasteImageToWhiteboard(imageUrl);
+            clipUrlInput.value = '';
+            
+            // Close the banner after adding
+            setTimeout(() => {
+                clipBanner.classList.add('hidden');
+                clipBtn.classList.remove('active');
+            }, 500);
+        };
+
+        clipAddBtn.addEventListener('click', addImageToWhiteboard);
+        
+        clipUrlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addImageToWhiteboard();
             }
         });
     }

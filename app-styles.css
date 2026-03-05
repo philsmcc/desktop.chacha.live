@@ -1333,74 +1333,106 @@ body.dark-mode .desktop-icon-label {
     background: #ffffff;
 }
 
-/* Clip Overlay */
-.browser-clip-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(245, 124, 0, 0.1);
+/* Clip Banner - Non-blocking banner above iframe */
+.browser-clip-banner {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10;
-    backdrop-filter: blur(2px);
-    transition: opacity 0.3s;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, var(--primary-color) 0%, #ff9800 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.3s ease;
 }
 
-.browser-clip-overlay.hidden {
-    opacity: 0;
-    pointer-events: none;
+.browser-clip-banner.hidden {
+    display: none;
 }
 
-.clip-instructions {
+.clip-banner-content {
     display: flex;
-    flex-direction: column;
     align-items: center;
     gap: 12px;
-    padding: 30px 40px;
-    background: var(--bg-card);
-    border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    border: 2px solid var(--primary-color);
-    text-align: center;
+    flex-wrap: wrap;
+    justify-content: center;
 }
 
-.clip-instructions svg {
-    width: 48px;
-    height: 48px;
-    stroke: var(--primary-color);
+.clip-banner-content svg {
+    width: 24px;
+    height: 24px;
+    stroke: white;
+    flex-shrink: 0;
 }
 
-.clip-instructions span {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.clip-instructions p {
-    color: var(--text-secondary);
-    font-size: 14px;
-    margin: 0;
-}
-
-.clip-exit-btn {
-    padding: 10px 24px;
-    background: var(--primary-color);
-    border: none;
-    border-radius: 8px;
+.clip-banner-content span {
     color: white;
     font-size: 14px;
     font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-    margin-top: 8px;
 }
 
-.clip-exit-btn:hover {
-    background: var(--primary-hover);
+.clip-url-input {
+    flex: 1;
+    min-width: 250px;
+    max-width: 400px;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    color: #333;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.2s;
+}
+
+.clip-url-input:focus {
+    border-color: white;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+}
+
+.clip-url-input::placeholder {
+    color: #999;
+}
+
+.clip-add-btn {
+    padding: 10px 20px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.clip-add-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: white;
     transform: scale(1.02);
+}
+
+.clip-close-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 8px;
+}
+
+.clip-close-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.clip-close-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: white;
 }
 
 /* Browser Status Bar */
