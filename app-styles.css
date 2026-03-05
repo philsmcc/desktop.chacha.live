@@ -1696,7 +1696,7 @@ body.dark-mode .desktop-icon-label {
     width: auto !important;
     height: auto !important;
     border-radius: 0;
-    z-index: 9000 !important;
+    /* z-index managed by JavaScript for proper window stacking */
 }
 
 .window.maximized .window-header {

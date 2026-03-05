@@ -814,7 +814,10 @@ class DesktopOS {
             win.minimized = false;
         }
         
-        win.element.style.zIndex = ++this.windowZIndex;
+        // Always bring to front with a new z-index
+        this.windowZIndex++;
+        win.element.style.zIndex = this.windowZIndex;
+        
         const app = this.apps.find(a => a.id === appId);
         document.getElementById("topbar-title").textContent = app ? app.name : "Desktop";
     }
