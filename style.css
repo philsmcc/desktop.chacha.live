@@ -702,33 +702,37 @@ body.dark-mode .desktop-icon-label {
 /* ==================== AUTH TABS ==================== */
 .auth-tabs {
     display: flex;
-    gap: 0;
-    margin-bottom: 24px;
-    background: rgba(0, 0, 0, 0.1);
-    border-radius: 12px;
-    padding: 4px;
+    gap: 8px;
+    margin-bottom: 28px;
+    padding: 6px;
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
 }
 
 .auth-tab {
     flex: 1;
-    padding: 12px 16px;
+    padding: 12px 20px;
     background: transparent;
     border: none;
     border-radius: 10px;
     font-size: 14px;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.6);
+    font-weight: 600;
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.25s ease;
+    position: relative;
 }
 
 .auth-tab:hover {
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--text-primary);
+    background: rgba(245, 124, 0, 0.08);
 }
 
 .auth-tab.active {
-    background: rgba(255, 255, 255, 0.15);
-    color: #ffffff;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+    box-shadow: 0 4px 12px rgba(245, 124, 0, 0.3);
 }
 
 .auth-form {
@@ -768,3 +772,151 @@ body.dark-mode .desktop-icon-label {
 .password-strength-bar.weak { width: 33%; background: #e53935; }
 .password-strength-bar.medium { width: 66%; background: #fb8c00; }
 .password-strength-bar.strong { width: 100%; background: #43a047; }
+
+/* ==================== VERIFICATION SCREEN ==================== */
+.verification-content {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.verification-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 24px;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgba(245, 124, 0, 0.3);
+    animation: pulse 2s infinite;
+}
+
+.verification-icon svg {
+    width: 40px;
+    height: 40px;
+    color: white;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 8px 24px rgba(245, 124, 0, 0.3); }
+    50% { transform: scale(1.05); box-shadow: 0 12px 32px rgba(245, 124, 0, 0.4); }
+}
+
+.verification-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 12px 0;
+}
+
+.verification-message {
+    font-size: 15px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0 0 24px 0;
+}
+
+.verification-message strong {
+    color: var(--primary-color);
+}
+
+.verification-tips {
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+}
+
+.verification-tips p {
+    margin: 0;
+    padding: 6px 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.resend-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 14px 24px;
+    background: transparent;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    margin-bottom: 12px;
+}
+
+.resend-btn:hover {
+    border-color: var(--primary-color);
+    background: rgba(245, 124, 0, 0.08);
+    color: var(--primary-color);
+}
+
+.resend-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.resend-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.back-to-login-btn {
+    width: 100%;
+    padding: 12px 24px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.back-to-login-btn:hover {
+    color: var(--text-primary);
+}
+
+/* ==================== ALERT MESSAGES ==================== */
+.auth-alert {
+    padding: 14px 18px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    animation: fadeInDown 0.3s ease;
+}
+
+@keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.auth-alert.success {
+    background: rgba(67, 160, 71, 0.15);
+    border: 1px solid rgba(67, 160, 71, 0.3);
+    color: #43a047;
+}
+
+.auth-alert.error {
+    background: rgba(229, 57, 53, 0.15);
+    border: 1px solid rgba(229, 57, 53, 0.3);
+    color: #e53935;
+}
+
+.auth-alert svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}

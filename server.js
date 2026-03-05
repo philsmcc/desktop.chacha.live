@@ -4,7 +4,9 @@ const cors = require('cors');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const app = express();
@@ -17,7 +19,7 @@ app.use(express.json());
 // Multer for file uploads (memory storage)
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
         if (allowedTypes.includes(file.mimetype)) {
@@ -37,12 +39,25 @@ const s3Client = new S3Client({
     }
 });
 
+// SES Client for email
+const sesClient = new SESClient({
+    region: process.env.AWS_SES_REGION || process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
+});
+
 const BUCKET = process.env.S3_BUCKET;
+const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@hovercam.com';
+const APP_URL = process.env.APP_URL || 'https://desktop.chacha.live';
 
-// In-memory user store (will integrate with PostgreSQL later)
+// In-memory stores
 const users = new Map();
+const verificationTokens = new Map();
+const pendingUsers = new Map();
 
-// Default system wallpapers
+// Default wallpapers
 const defaultWallpapers = [
     { id: 'default1', name: 'Gradient Dark', url: '/wallpapers/gradient-dark.jpg' },
     { id: 'default2', name: 'Gradient Light', url: '/wallpapers/gradient-light.jpg' },
@@ -53,24 +68,16 @@ const defaultWallpapers = [
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-        return res.status(401).json({ error: 'Access token required' });
-    }
-
+    if (!token) return res.status(401).json({ error: 'Access token required' });
     jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-        if (err) {
-            return res.status(403).json({ error: 'Invalid or expired token' });
-        }
+        if (err) return res.status(403).json({ error: 'Invalid or expired token' });
         req.user = user;
         next();
     });
 };
 
-// Helper: Get user's S3 prefix
+// Helpers
 const getUserPrefix = (username) => `users/${username}`;
-
-// Helper: Get default preferences
 const getDefaultPreferences = () => ({
     theme: 'light',
     wallpaper: 'gradient-light1',
@@ -79,60 +86,214 @@ const getDefaultPreferences = () => ({
     iconPositions: {},
     lastLogin: new Date().toISOString()
 });
+const generateVerificationToken = () => crypto.randomBytes(32).toString('hex');
+
+// Email template
+const generateVerificationEmail = (username, verificationUrl) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f7fa;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" style="width: 100%; max-width: 520px; border-collapse: collapse;">
+                    <tr>
+                        <td align="center" style="padding-bottom: 32px;">
+                            <table role="presentation" style="border-collapse: collapse;">
+                                <tr>
+                                    <td style="width: 48px; height: 48px; background: linear-gradient(135deg, #f57c00, #e65100); border-radius: 12px; text-align: center; vertical-align: middle;">
+                                        <span style="color: white; font-size: 24px; font-weight: bold;">H</span>
+                                    </td>
+                                    <td style="padding-left: 12px;">
+                                        <span style="font-size: 24px; font-weight: 700; color: #1a1a2e;">HoverCam</span>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background: #ffffff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);">
+                            <div style="height: 4px; background: linear-gradient(90deg, #f57c00, #ff9800); border-radius: 16px 16px 0 0;"></div>
+                            <div style="padding: 40px;">
+                                <h1 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 600; color: #1a1a2e; text-align: center;">
+                                    Welcome aboard, ${username}! 🎉
+                                </h1>
+                                <p style="margin: 0 0 32px 0; font-size: 16px; color: #666; text-align: center; line-height: 1.6;">
+                                    You're just one click away from accessing your HoverCam Desktop. Please verify your email address to activate your account.
+                                </p>
+                                <div style="text-align: center; margin-bottom: 32px;">
+                                    <a href="${verificationUrl}" style="display: inline-block; padding: 16px 48px; background: linear-gradient(135deg, #f57c00, #e65100); color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 12px;">
+                                        Verify Email Address
+                                    </a>
+                                </div>
+                                <p style="margin: 0 0 16px 0; font-size: 14px; color: #888; text-align: center;">
+                                    Or copy and paste this link in your browser:
+                                </p>
+                                <div style="background: #f8f9fa; border-radius: 8px; padding: 12px 16px; word-break: break-all;">
+                                    <a href="${verificationUrl}" style="font-size: 13px; color: #f57c00; text-decoration: none;">${verificationUrl}</a>
+                                </div>
+                                <p style="margin: 24px 0 0 0; font-size: 13px; color: #999; text-align: center;">
+                                    ⏰ This link expires in 24 hours
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 32px 20px; text-align: center;">
+                            <p style="margin: 0 0 8px 0; font-size: 13px; color: #888;">
+                                Didn't create an account? You can safely ignore this email.
+                            </p>
+                            <p style="margin: 0; font-size: 12px; color: #aaa;">
+                                © ${new Date().getFullYear()} HoverCam Desktop • Made with ❤️ for educators
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`;
+
+const sendVerificationEmail = async (email, username, token) => {
+    const verificationUrl = `${APP_URL}/api/auth/verify?token=${token}`;
+    const params = {
+        Source: FROM_EMAIL,
+        Destination: { ToAddresses: [email] },
+        Message: {
+            Subject: { Data: 'Verify your HoverCam Desktop account', Charset: 'UTF-8' },
+            Body: {
+                Html: { Data: generateVerificationEmail(username, verificationUrl), Charset: 'UTF-8' },
+                Text: { Data: `Welcome to HoverCam Desktop, ${username}!\n\nPlease verify your email: ${verificationUrl}\n\nThis link expires in 24 hours.`, Charset: 'UTF-8' }
+            }
+        }
+    };
+    await sesClient.send(new SendEmailCommand(params));
+};
 
 // ==================== AUTH ROUTES ====================
 
-// Register
+// Register with email verification
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, password, email } = req.body;
 
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password are required' });
+        if (!username || !password || !email) {
+            return res.status(400).json({ error: 'Username, email, and password are required' });
         }
+        if (username.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
+        if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) return res.status(400).json({ error: 'Please enter a valid email address' });
 
-        if (users.has(username)) {
+        if (users.has(username) || pendingUsers.has(username)) {
             return res.status(409).json({ error: 'Username already exists' });
         }
 
+        const emailExists = Array.from(users.values()).some(u => u.email === email) ||
+                           Array.from(pendingUsers.values()).some(u => u.email === email);
+        if (emailExists) return res.status(409).json({ error: 'Email already registered' });
+
         const hashedPassword = await bcrypt.hash(password, 10);
-        users.set(username, {
-            username,
-            email: email || '',
-            password: hashedPassword,
-            createdAt: new Date().toISOString()
-        });
+        const verificationToken = generateVerificationToken();
+        const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-        // Create default preferences in S3
-        const preferences = getDefaultPreferences();
-        await s3Client.send(new PutObjectCommand({
-            Bucket: BUCKET,
-            Key: `${getUserPrefix(username)}/preferences.json`,
-            Body: JSON.stringify(preferences),
-            ContentType: 'application/json'
-        }));
+        pendingUsers.set(username, { username, email, password: hashedPassword, verificationToken, createdAt: new Date().toISOString() });
+        verificationTokens.set(verificationToken, { username, email, expires });
 
-        // Create user folders
-        const folders = ['wallpapers', 'files/Documents', 'files/Pictures', 'files/Videos'];
-        for (const folder of folders) {
-            await s3Client.send(new PutObjectCommand({
-                Bucket: BUCKET,
-                Key: `${getUserPrefix(username)}/${folder}/.keep`,
-                Body: '',
-                ContentType: 'text/plain'
-            }));
+        try {
+            await sendVerificationEmail(email, username, verificationToken);
+        } catch (emailError) {
+            console.error('Email error:', emailError);
+            pendingUsers.delete(username);
+            verificationTokens.delete(verificationToken);
+            return res.status(500).json({ error: 'Failed to send verification email. Please try again.' });
         }
 
-        const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-        res.status(201).json({
-            message: 'User registered successfully',
-            token,
-            user: { username, email: email || '' }
-        });
+        res.status(201).json({ message: 'Please check your email to verify your account.', requiresVerification: true });
     } catch (error) {
         console.error('Registration error:', error);
         res.status(500).json({ error: 'Registration failed' });
+    }
+});
+
+// Verify email
+app.get('/api/auth/verify', async (req, res) => {
+    try {
+        const { token } = req.query;
+        if (!token) return res.redirect(`${APP_URL}?error=invalid_token`);
+
+        const tokenData = verificationTokens.get(token);
+        if (!tokenData) return res.redirect(`${APP_URL}?error=invalid_token`);
+        if (new Date() > tokenData.expires) {
+            verificationTokens.delete(token);
+            pendingUsers.delete(tokenData.username);
+            return res.redirect(`${APP_URL}?error=token_expired`);
+        }
+
+        const pendingUser = pendingUsers.get(tokenData.username);
+        if (!pendingUser) return res.redirect(`${APP_URL}?error=user_not_found`);
+
+        users.set(pendingUser.username, {
+            username: pendingUser.username,
+            email: pendingUser.email,
+            password: pendingUser.password,
+            emailVerified: true,
+            createdAt: pendingUser.createdAt,
+            verifiedAt: new Date().toISOString()
+        });
+
+        pendingUsers.delete(tokenData.username);
+        verificationTokens.delete(token);
+
+        // Create S3 structure
+        try {
+            const preferences = getDefaultPreferences();
+            await s3Client.send(new PutObjectCommand({
+                Bucket: BUCKET, Key: `${getUserPrefix(pendingUser.username)}/preferences.json`,
+                Body: JSON.stringify(preferences), ContentType: 'application/json'
+            }));
+            for (const folder of ['wallpapers', 'files/Documents', 'files/Pictures', 'files/Videos']) {
+                await s3Client.send(new PutObjectCommand({
+                    Bucket: BUCKET, Key: `${getUserPrefix(pendingUser.username)}/${folder}/.keep`,
+                    Body: '', ContentType: 'text/plain'
+                }));
+            }
+        } catch (s3Error) { console.error('S3 setup error:', s3Error); }
+
+        res.redirect(`${APP_URL}?verified=true`);
+    } catch (error) {
+        console.error('Verification error:', error);
+        res.redirect(`${APP_URL}?error=verification_failed`);
+    }
+});
+
+// Resend verification
+app.post('/api/auth/resend-verification', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+
+        const pendingUser = Array.from(pendingUsers.values()).find(u => u.email === email);
+        if (!pendingUser) return res.status(404).json({ error: 'No pending registration found' });
+
+        if (pendingUser.verificationToken) verificationTokens.delete(pendingUser.verificationToken);
+
+        const newToken = generateVerificationToken();
+        pendingUser.verificationToken = newToken;
+        pendingUsers.set(pendingUser.username, pendingUser);
+        verificationTokens.set(newToken, { username: pendingUser.username, email, expires: new Date(Date.now() + 24 * 60 * 60 * 1000) });
+
+        await sendVerificationEmail(email, pendingUser.username, newToken);
+        res.json({ message: 'Verification email sent!' });
+    } catch (error) {
+        console.error('Resend error:', error);
+        res.status(500).json({ error: 'Failed to resend verification email' });
     }
 });
 
@@ -140,83 +301,22 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
-
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password are required' });
-        }
+        if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
 
         const user = users.get(username);
-        
-        // For demo: auto-create user if doesn't exist
         if (!user) {
-            const hashedPassword = await bcrypt.hash(password, 10);
-            users.set(username, {
-                username,
-                email: '',
-                password: hashedPassword,
-                createdAt: new Date().toISOString()
-            });
-
-            // Create default preferences in S3
-            const preferences = getDefaultPreferences();
-            try {
-                await s3Client.send(new PutObjectCommand({
-                    Bucket: BUCKET,
-                    Key: `${getUserPrefix(username)}/preferences.json`,
-                    Body: JSON.stringify(preferences),
-                    ContentType: 'application/json'
-                }));
-            } catch (s3Error) {
-                console.log('S3 preference creation skipped:', s3Error.message);
+            if (pendingUsers.has(username)) {
+                const pending = pendingUsers.get(username);
+                return res.status(403).json({ error: 'Please verify your email first', requiresVerification: true, email: pending.email });
             }
-
-            const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-            return res.json({
-                message: 'Login successful',
-                token,
-                user: { username, email: '' }
-            });
+            return res.status(401).json({ error: 'Invalid username or password' });
         }
 
         const validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword) {
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
+        if (!validPassword) return res.status(401).json({ error: 'Invalid username or password' });
 
         const token = jwt.sign({ username }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-        // Update last login in preferences
-        try {
-            const prefKey = `${getUserPrefix(username)}/preferences.json`;
-            let preferences = getDefaultPreferences();
-            
-            try {
-                const response = await s3Client.send(new GetObjectCommand({
-                    Bucket: BUCKET,
-                    Key: prefKey
-                }));
-                const body = await response.Body.transformToString();
-                preferences = JSON.parse(body);
-            } catch (e) {
-                // Use default preferences if not found
-            }
-
-            preferences.lastLogin = new Date().toISOString();
-            await s3Client.send(new PutObjectCommand({
-                Bucket: BUCKET,
-                Key: prefKey,
-                Body: JSON.stringify(preferences),
-                ContentType: 'application/json'
-            }));
-        } catch (s3Error) {
-            console.log('Preferences update skipped:', s3Error.message);
-        }
-
-        res.json({
-            message: 'Login successful',
-            token,
-            user: { username, email: user.email }
-        });
+        res.json({ message: 'Login successful', token, user: { username: user.username, email: user.email } });
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Login failed' });
@@ -224,437 +324,173 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ==================== PREFERENCES ROUTES ====================
-
-// Get user preferences
 app.get('/api/preferences', authenticateToken, async (req, res) => {
     try {
-        const { username } = req.user;
-        const key = `${getUserPrefix(username)}/preferences.json`;
-
+        const key = `${getUserPrefix(req.user.username)}/preferences.json`;
         try {
-            const response = await s3Client.send(new GetObjectCommand({
-                Bucket: BUCKET,
-                Key: key
-            }));
+            const response = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
             const body = await response.Body.transformToString();
             res.json(JSON.parse(body));
         } catch (error) {
-            if (error.name === 'NoSuchKey') {
-                const defaults = getDefaultPreferences();
-                res.json(defaults);
-            } else {
-                throw error;
-            }
+            if (error.name === 'NoSuchKey') res.json(getDefaultPreferences());
+            else throw error;
         }
     } catch (error) {
-        console.error('Get preferences error:', error);
+        console.error('Preferences error:', error);
         res.status(500).json({ error: 'Failed to get preferences' });
     }
 });
 
-// Update user preferences
 app.put('/api/preferences', authenticateToken, async (req, res) => {
     try {
-        const { username } = req.user;
-        const updates = req.body;
-        const key = `${getUserPrefix(username)}/preferences.json`;
-
-        // Get existing preferences
-        let preferences = getDefaultPreferences();
-        try {
-            const response = await s3Client.send(new GetObjectCommand({
-                Bucket: BUCKET,
-                Key: key
-            }));
-            const body = await response.Body.transformToString();
-            preferences = JSON.parse(body);
-        } catch (e) {
-            // Use defaults if not found
-        }
-
-        // Merge updates
-        preferences = { ...preferences, ...updates };
-
-        // Save to S3
+        const key = `${getUserPrefix(req.user.username)}/preferences.json`;
         await s3Client.send(new PutObjectCommand({
-            Bucket: BUCKET,
-            Key: key,
-            Body: JSON.stringify(preferences),
-            ContentType: 'application/json'
+            Bucket: BUCKET, Key: key, Body: JSON.stringify(req.body), ContentType: 'application/json'
         }));
-
-        res.json({ message: 'Preferences updated', preferences });
+        res.json({ message: 'Preferences saved' });
     } catch (error) {
-        console.error('Update preferences error:', error);
-        res.status(500).json({ error: 'Failed to update preferences' });
+        console.error('Save preferences error:', error);
+        res.status(500).json({ error: 'Failed to save preferences' });
     }
 });
 
-// ==================== WALLPAPER ROUTES ====================
-
-// Get system wallpapers
-app.get('/api/wallpapers/system', async (req, res) => {
-    try {
-        const wallpapers = [];
-        
-        // List wallpapers from S3 system folder
-        try {
-            const response = await s3Client.send(new ListObjectsV2Command({
-                Bucket: BUCKET,
-                Prefix: 'system/wallpapers/'
-            }));
-
-            if (response.Contents) {
-                for (const item of response.Contents) {
-                    if (item.Key.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-                        const url = await getSignedUrl(s3Client, new GetObjectCommand({
-                            Bucket: BUCKET,
-                            Key: item.Key
-                        }), { expiresIn: 3600 });
-
-                        wallpapers.push({
-                            id: item.Key,
-                            name: item.Key.split('/').pop().replace(/\.[^/.]+$/, ''),
-                            url,
-                            type: 'system'
-                        });
-                    }
-                }
-            }
-        } catch (e) {
-            console.log('S3 system wallpapers not found:', e.message);
-        }
-
-        // Add default wallpapers if none in S3
-        if (wallpapers.length === 0) {
-            wallpapers.push(...defaultWallpapers);
-        }
-
-        res.json(wallpapers);
-    } catch (error) {
-        console.error('Get system wallpapers error:', error);
-        res.status(500).json({ error: 'Failed to get system wallpapers' });
-    }
-});
-
-// Get user wallpapers
-app.get('/api/wallpapers/user', authenticateToken, async (req, res) => {
-    try {
-        const { username } = req.user;
-        const prefix = `${getUserPrefix(username)}/wallpapers/`;
-        const wallpapers = [];
-
-        try {
-            const response = await s3Client.send(new ListObjectsV2Command({
-                Bucket: BUCKET,
-                Prefix: prefix
-            }));
-
-            if (response.Contents) {
-                for (const item of response.Contents) {
-                    if (item.Key.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-                        const url = await getSignedUrl(s3Client, new GetObjectCommand({
-                            Bucket: BUCKET,
-                            Key: item.Key
-                        }), { expiresIn: 3600 });
-
-                        wallpapers.push({
-                            id: item.Key,
-                            name: item.Key.split('/').pop().replace(/\.[^/.]+$/, ''),
-                            url,
-                            type: 'user'
-                        });
-                    }
-                }
-            }
-        } catch (e) {
-            console.log('No user wallpapers found');
-        }
-
-        res.json(wallpapers);
-    } catch (error) {
-        console.error('Get user wallpapers error:', error);
-        res.status(500).json({ error: 'Failed to get user wallpapers' });
-    }
-});
-
-// Upload wallpaper
-app.post('/api/wallpapers/upload', authenticateToken, upload.single('wallpaper'), async (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No file uploaded' });
-        }
-
-        const { username } = req.user;
-        const filename = `${Date.now()}-${req.file.originalname}`;
-        const key = `${getUserPrefix(username)}/wallpapers/${filename}`;
-
-        await s3Client.send(new PutObjectCommand({
-            Bucket: BUCKET,
-            Key: key,
-            Body: req.file.buffer,
-            ContentType: req.file.mimetype
-        }));
-
-        const url = await getSignedUrl(s3Client, new GetObjectCommand({
-            Bucket: BUCKET,
-            Key: key
-        }), { expiresIn: 3600 });
-
-        res.json({
-            message: 'Wallpaper uploaded successfully',
-            wallpaper: {
-                id: key,
-                name: filename,
-                url,
-                type: 'user'
-            }
-        });
-    } catch (error) {
-        console.error('Upload wallpaper error:', error);
-        res.status(500).json({ error: 'Failed to upload wallpaper' });
-    }
-});
-
-// Delete wallpaper - using POST with body for the ID
-app.post('/api/wallpapers/delete', authenticateToken, async (req, res) => {
-    try {
-        const { username } = req.user;
-        const wallpaperId = req.body.wallpaperId;
-
-        // Ensure user can only delete their own wallpapers
-        if (!wallpaperId.startsWith(`users/${username}/wallpapers/`)) {
-            return res.status(403).json({ error: 'Cannot delete this wallpaper' });
-        }
-
-        await s3Client.send(new DeleteObjectCommand({
-            Bucket: BUCKET,
-            Key: wallpaperId
-        }));
-
-        res.json({ message: 'Wallpaper deleted successfully' });
-    } catch (error) {
-        console.error('Delete wallpaper error:', error);
-        res.status(500).json({ error: 'Failed to delete wallpaper' });
-    }
-});
-
-// Get signed URL for wallpaper - using query param
-app.get('/api/wallpapers/url', authenticateToken, async (req, res) => {
-    try {
-        const wallpaperId = req.query.id;
-        
-        const url = await getSignedUrl(s3Client, new GetObjectCommand({
-            Bucket: BUCKET,
-            Key: wallpaperId
-        }), { expiresIn: 3600 });
-
-        res.json({ url });
-    } catch (error) {
-        console.error('Get wallpaper URL error:', error);
-        res.status(500).json({ error: 'Failed to get wallpaper URL' });
-    }
-});
-
-// ==================== FILE STORAGE ROUTES ====================
-
-// List files in a folder - using query param
+// ==================== FILES ROUTES ====================
 app.get('/api/files', authenticateToken, async (req, res) => {
     try {
-        const { username } = req.user;
-        const folder = req.query.folder || '';
-        const prefix = `${getUserPrefix(username)}/files/${folder}`;
-
+        const path = req.query.path || '';
+        const prefix = `${getUserPrefix(req.user.username)}/files/${path}`.replace(/\/+/g, '/').replace(/\/$/, '') + '/';
+        
         const response = await s3Client.send(new ListObjectsV2Command({
-            Bucket: BUCKET,
-            Prefix: prefix.endsWith('/') ? prefix : `${prefix}/`,
-            Delimiter: '/'
+            Bucket: BUCKET, Prefix: prefix, Delimiter: '/'
         }));
 
-        const files = [];
-        const folders = [];
+        const folders = (response.CommonPrefixes || []).map(p => {
+            const name = p.Prefix.replace(prefix, '').replace('/', '');
+            return { name, type: 'folder', path: p.Prefix };
+        }).filter(f => f.name && f.name !== '.keep');
 
-        // Get folders (CommonPrefixes)
-        if (response.CommonPrefixes) {
-            for (const prefix of response.CommonPrefixes) {
-                const name = prefix.Prefix.split('/').filter(Boolean).pop();
-                folders.push({
-                    name,
-                    type: 'folder',
-                    path: prefix.Prefix
-                });
-            }
-        }
+        const files = (response.Contents || []).filter(f => !f.Key.endsWith('.keep') && f.Key !== prefix).map(f => {
+            const name = f.Key.split('/').pop();
+            return { name, type: 'file', size: f.Size, modified: f.LastModified, key: f.Key };
+        });
 
-        // Get files
-        if (response.Contents) {
-            for (const item of response.Contents) {
-                if (!item.Key.endsWith('.keep') && !item.Key.endsWith('/')) {
-                    files.push({
-                        name: item.Key.split('/').pop(),
-                        type: 'file',
-                        size: item.Size,
-                        lastModified: item.LastModified,
-                        path: item.Key
-                    });
-                }
-            }
-        }
-
-        res.json({ folders, files });
+        res.json({ folders, files, currentPath: path });
     } catch (error) {
         console.error('List files error:', error);
         res.status(500).json({ error: 'Failed to list files' });
     }
 });
 
-// Upload file - using query param for folder
-app.post('/api/files/upload', authenticateToken, upload.single('file'), async (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No file uploaded' });
-        }
-
-        const { username } = req.user;
-        const folder = req.query.folder || '';
-        const filename = req.file.originalname;
-        const key = `${getUserPrefix(username)}/files/${folder}/${filename}`.replace(/\/+/g, '/');
-
-        await s3Client.send(new PutObjectCommand({
-            Bucket: BUCKET,
-            Key: key,
-            Body: req.file.buffer,
-            ContentType: req.file.mimetype
-        }));
-
-        res.json({
-            message: 'File uploaded successfully',
-            file: {
-                name: filename,
-                path: key,
-                size: req.file.size
-            }
-        });
-    } catch (error) {
-        console.error('Upload file error:', error);
-        res.status(500).json({ error: 'Failed to upload file' });
-    }
-});
-
-// Create folder
 app.post('/api/files/folder', authenticateToken, async (req, res) => {
     try {
-        const { username } = req.user;
-        const { path: folderPath } = req.body;
-        
-        if (!folderPath) {
-            return res.status(400).json({ error: 'Folder path is required' });
-        }
-        
-        // Normalize path and create the folder marker
-        const normalizedPath = folderPath.replace(/^\/+|\/+$/g, '');
-        const key = `${getUserPrefix(username)}/files/${normalizedPath}/.keep`;
-        
-        await s3Client.send(new PutObjectCommand({
-            Bucket: BUCKET,
-            Key: key,
-            Body: '',
-            ContentType: 'application/x-directory'
-        }));
-        
-        res.json({
-            message: 'Folder created successfully',
-            folder: {
-                name: normalizedPath.split('/').pop(),
-                path: normalizedPath
-            }
-        });
+        const { path, name } = req.body;
+        const key = `${getUserPrefix(req.user.username)}/files/${path || ''}${name}/.keep`.replace(/\/+/g, '/');
+        await s3Client.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: '', ContentType: 'text/plain' }));
+        res.json({ message: 'Folder created' });
     } catch (error) {
         console.error('Create folder error:', error);
         res.status(500).json({ error: 'Failed to create folder' });
     }
 });
 
-// Delete file or folder
-app.delete('/api/files', authenticateToken, async (req, res) => {
+app.post('/api/files/upload', authenticateToken, upload.single('file'), async (req, res) => {
     try {
-        const { username } = req.user;
-        const { path: itemPath, type } = req.body;
-        
-        if (!itemPath) {
-            return res.status(400).json({ error: 'Path is required' });
-        }
-        
-        const userPrefix = getUserPrefix(username);
-        
-        if (type === 'folder') {
-            // Delete all objects in the folder
-            const prefix = `${userPrefix}/files/${itemPath}/`.replace(/\/+/g, '/');
-            
-            const listResponse = await s3Client.send(new ListObjectsV2Command({
-                Bucket: BUCKET,
-                Prefix: prefix
-            }));
-            
-            if (listResponse.Contents && listResponse.Contents.length > 0) {
-                for (const item of listResponse.Contents) {
-                    await s3Client.send(new DeleteObjectCommand({
-                        Bucket: BUCKET,
-                        Key: item.Key
-                    }));
-                }
-            }
-        } else {
-            // Delete single file
-            const key = `${userPrefix}/files/${itemPath}`.replace(/\/+/g, '/');
-            await s3Client.send(new DeleteObjectCommand({
-                Bucket: BUCKET,
-                Key: key
-            }));
-        }
-        
-        res.json({ message: 'Deleted successfully' });
+        const path = req.body.path || '';
+        const key = `${getUserPrefix(req.user.username)}/files/${path}${req.file.originalname}`.replace(/\/+/g, '/');
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET, Key: key, Body: req.file.buffer, ContentType: req.file.mimetype
+        }));
+        const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 3600 });
+        res.json({ message: 'File uploaded', url, key });
     } catch (error) {
-        console.error('Delete error:', error);
-        res.status(500).json({ error: 'Failed to delete' });
+        console.error('Upload error:', error);
+        res.status(500).json({ error: 'Failed to upload file' });
     }
 });
 
-// Get signed URL for file access
 app.get('/api/files/url', authenticateToken, async (req, res) => {
     try {
-        const { path: filePath } = req.query;
-        
-        if (!filePath) {
-            return res.status(400).json({ error: 'File path is required' });
-        }
-        
-        const command = new GetObjectCommand({
-            Bucket: BUCKET,
-            Key: filePath
-        });
-        
-        const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-        
-        res.json({ url: signedUrl });
+        const { key } = req.query;
+        const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 3600 });
+        res.json({ url });
     } catch (error) {
-        console.error('Get URL error:', error);
-        res.status(500).json({ error: 'Failed to get file URL' });
+        res.status(500).json({ error: 'Failed to get URL' });
+    }
+});
+
+app.delete('/api/files', authenticateToken, async (req, res) => {
+    try {
+        const { key } = req.query;
+        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+        res.json({ message: 'File deleted' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete file' });
+    }
+});
+
+// ==================== WALLPAPERS ROUTES ====================
+app.get('/api/wallpapers/system', (req, res) => { res.json(defaultWallpapers); });
+
+app.get('/api/wallpapers/user', authenticateToken, async (req, res) => {
+    try {
+        const prefix = `${getUserPrefix(req.user.username)}/wallpapers/`;
+        const response = await s3Client.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix }));
+        const wallpapers = await Promise.all((response.Contents || []).filter(f => !f.Key.endsWith('.keep')).map(async f => {
+            const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: f.Key }), { expiresIn: 3600 });
+            return { id: f.Key, name: f.Key.split('/').pop(), url, key: f.Key };
+        }));
+        res.json(wallpapers);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to get wallpapers' });
+    }
+});
+
+app.post('/api/wallpapers/upload', authenticateToken, upload.single('wallpaper'), async (req, res) => {
+    try {
+        const key = `${getUserPrefix(req.user.username)}/wallpapers/${Date.now()}-${req.file.originalname}`;
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET, Key: key, Body: req.file.buffer, ContentType: req.file.mimetype
+        }));
+        const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 3600 });
+        res.json({ id: key, name: req.file.originalname, url, key });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to upload wallpaper' });
+    }
+});
+
+app.post('/api/wallpapers/url', authenticateToken, async (req, res) => {
+    try {
+        const { url: imageUrl } = req.body;
+        const response = await fetch(imageUrl);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const key = `${getUserPrefix(req.user.username)}/wallpapers/${Date.now()}-wallpaper.jpg`;
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET, Key: key, Body: buffer, ContentType: 'image/jpeg'
+        }));
+        const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 3600 });
+        res.json({ id: key, name: 'wallpaper.jpg', url, key });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to save wallpaper from URL' });
+    }
+});
+
+app.delete('/api/wallpapers/delete', authenticateToken, async (req, res) => {
+    try {
+        const { key } = req.query;
+        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+        res.json({ message: 'Wallpaper deleted' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete wallpaper' });
     }
 });
 
 // ==================== HEALTH CHECK ====================
-
 app.get('/api/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString(),
-        version: '1.0.0'
-    });
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`HoverCam API server running on port ${PORT}`);
+    console.log(`HoverCam API running on port ${PORT}`);
     console.log(`S3 Bucket: ${BUCKET}`);
 });

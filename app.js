@@ -215,6 +215,21 @@ class DesktopOS {
             this.handleRegister();
         });
 
+        // Verification screen buttons
+        document.getElementById("resend-btn").addEventListener("click", () => {
+            this.resendVerificationEmail();
+        });
+
+        document.getElementById("back-to-login").addEventListener("click", () => {
+            document.getElementById("verification-screen").classList.add("hidden");
+            document.getElementById("login-form").classList.remove("hidden");
+            document.querySelectorAll(".auth-tab").forEach(t => t.classList.remove("active"));
+            document.querySelector('[data-tab="login"]').classList.add("active");
+        });
+
+        // Handle URL params for verification result
+        this.handleVerificationResult();
+
         document.getElementById("logout-btn").addEventListener("click", () => {
             this.handleLogout();
         });
@@ -447,13 +462,19 @@ class DesktopOS {
         const registerBtn = document.querySelector(".register-btn");
 
         // Validation
-        if (!username || !password) {
-            errorDiv.textContent = "Username and password are required";
+        if (!username || !email || !password) {
+            errorDiv.textContent = "All fields are required";
             return;
         }
 
         if (username.length < 3) {
             errorDiv.textContent = "Username must be at least 3 characters";
+            return;
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            errorDiv.textContent = "Please enter a valid email address";
             return;
         }
 
@@ -474,37 +495,134 @@ class DesktopOS {
             const response = await fetch("https://desktop.chacha.live/api/auth/register", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password, email: email || undefined })
+                body: JSON.stringify({ username, password, email })
             });
 
+            const data = await response.json();
+            
             if (!response.ok) {
-                const data = await response.json();
                 throw new Error(data.error || "Registration failed");
             }
 
-            const data = await response.json();
-
-            // Auto-login after successful registration
-            this.token = data.token;
-            this.currentUser = data.user;
-            
-            localStorage.setItem("hovercam_token", this.token);
-            localStorage.setItem("hovercam_session", JSON.stringify(this.currentUser));
-            
-            // Clean up old shared whiteboard data
-            localStorage.removeItem('hovercam_whiteboard_canvas');
-            localStorage.removeItem('hovercam_whiteboard_bgColor');
-            localStorage.removeItem('hovercam_whiteboard_objects');
-            
-            errorDiv.textContent = "";
-            await this.loadUserPreferences();
-            this.showDesktop();
-            this.showNotification("Welcome to HoverCam Desktop, " + username + "!", "success");
+            // Registration successful - show verification screen
+            if (data.requiresVerification) {
+                this.pendingEmail = email;
+                this.pendingUsername = username;
+                this.showVerificationScreen(email);
+            } else if (data.token) {
+                // Direct login (if verification was disabled)
+                this.token = data.token;
+                this.currentUser = data.user;
+                localStorage.setItem("hovercam_token", this.token);
+                localStorage.setItem("hovercam_session", JSON.stringify(this.currentUser));
+                localStorage.removeItem('hovercam_whiteboard_canvas');
+                localStorage.removeItem('hovercam_whiteboard_bgColor');
+                localStorage.removeItem('hovercam_whiteboard_objects');
+                errorDiv.textContent = "";
+                await this.loadUserPreferences();
+                this.showDesktop();
+                this.showNotification("Welcome to HoverCam Desktop, " + username + "!", "success");
+            }
         } catch (error) {
+            errorDiv.style.color = "";
             errorDiv.textContent = error.message || "Registration failed";
         } finally {
             registerBtn.disabled = false;
             registerBtn.innerHTML = '<span>Create Account</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
+        }
+    }
+
+    showVerificationScreen(email) {
+        document.getElementById("login-form").classList.add("hidden");
+        document.getElementById("register-form").classList.add("hidden");
+        document.getElementById("verification-screen").classList.remove("hidden");
+        document.getElementById("verification-email").textContent = email;
+        document.querySelectorAll(".auth-tab").forEach(t => t.classList.remove("active"));
+        
+        // Clear the form
+        document.getElementById("reg-username").value = "";
+        document.getElementById("reg-email").value = "";
+        document.getElementById("reg-password").value = "";
+        document.getElementById("reg-confirm").value = "";
+        document.getElementById("register-error").textContent = "";
+    }
+
+    async resendVerificationEmail() {
+        const resendBtn = document.getElementById("resend-btn");
+        if (!this.pendingEmail || !this.pendingUsername) {
+            this.showNotification("Please register again", "error");
+            return;
+        }
+
+        resendBtn.disabled = true;
+        resendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg><span>Sending...</span>';
+
+        try {
+            const response = await fetch("https://desktop.chacha.live/api/auth/resend-verification", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: this.pendingEmail, username: this.pendingUsername })
+            });
+
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || "Failed to resend");
+            }
+
+            this.showNotification("Verification email sent!", "success");
+        } catch (error) {
+            this.showNotification(error.message || "Failed to resend email", "error");
+        } finally {
+            resendBtn.disabled = false;
+            resendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg><span>Resend Verification Email</span>';
+        }
+    }
+
+    handleVerificationResult() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const verified = urlParams.get('verified');
+        const error = urlParams.get('error');
+        const loginContainer = document.querySelector('.login-container');
+        
+        // Clear URL params
+        if (verified || error) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+        
+        if (verified === 'true') {
+            // Show success message
+            const alert = document.createElement('div');
+            alert.className = 'auth-alert success';
+            alert.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                    <path d="M22 4L12 14.01l-3-3"/>
+                </svg>
+                <span>Email verified! You can now sign in.</span>
+            `;
+            loginContainer.insertBefore(alert, loginContainer.querySelector('.auth-tabs'));
+            setTimeout(() => alert.remove(), 8000);
+        } else if (error) {
+            const messages = {
+                'invalid_token': 'Invalid verification link. Please register again.',
+                'token_expired': 'Verification link has expired. Please register again.',
+                'user_not_found': 'Account not found. Please register again.'
+            };
+            const message = messages[error] || 'Verification failed. Please try again.';
+            
+            const alert = document.createElement('div');
+            alert.className = 'auth-alert error';
+            alert.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                <span>${message}</span>
+            `;
+            loginContainer.insertBefore(alert, loginContainer.querySelector('.auth-tabs'));
+            setTimeout(() => alert.remove(), 8000);
         }
     }
 
