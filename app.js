@@ -1712,25 +1712,75 @@ class DesktopOS {
                         toolbar.querySelectorAll('.wb-slideout-btn[data-tool]').forEach(b => b.classList.remove('active'));
                     }
                 } else if (action === 'clear') {
-                    if (confirm('Clear the entire whiteboard?')) {
-                        const rect = container.getBoundingClientRect();
-                        ctx.fillStyle = state.bgColor;
-                        ctx.fillRect(0, 0, rect.width, rect.height);
-                        // Clear persisted canvas
-                        localStorage.removeItem('hovercam_whiteboard_canvas');
-                        // Clear objects
-                        state.objects = [];
-                        objectLayer.innerHTML = '';
-                        localStorage.removeItem('hovercam_whiteboard_objects');
-                        state.selectedObject = null;
-                        // Reset history
-                        state.history = [];
-                        state.historyIndex = -1;
-                        saveState();
-                    }
+                    // Show in-app confirmation instead of browser confirm()
+                    showClearConfirmation();
                 }
             });
         });
+        
+        // In-app clear confirmation modal
+        const showClearConfirmation = () => {
+            // Remove existing modal if any
+            const existing = container.querySelector('.wb-confirm-modal');
+            if (existing) existing.remove();
+            
+            const modal = document.createElement('div');
+            modal.className = 'wb-confirm-modal';
+            modal.innerHTML = 
+                '<div class="wb-confirm-content">' +
+                    '<div class="wb-confirm-icon">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>' +
+                    '</div>' +
+                    '<h3>Clear Whiteboard?</h3>' +
+                    '<p>This will erase all drawings and images.</p>' +
+                    '<div class="wb-confirm-buttons">' +
+                        '<button class="wb-confirm-cancel">Cancel</button>' +
+                        '<button class="wb-confirm-yes">Clear All</button>' +
+                    '</div>' +
+                '</div>';
+            
+            container.appendChild(modal);
+            
+            // Animate in
+            requestAnimationFrame(() => modal.classList.add('visible'));
+            
+            // Cancel button
+            modal.querySelector('.wb-confirm-cancel').addEventListener('click', () => {
+                modal.classList.remove('visible');
+                setTimeout(() => modal.remove(), 200);
+            });
+            
+            // Clear button
+            modal.querySelector('.wb-confirm-yes').addEventListener('click', () => {
+                const rect = container.getBoundingClientRect();
+                ctx.fillStyle = state.bgColor;
+                ctx.fillRect(0, 0, rect.width, rect.height);
+                // Clear persisted canvas
+                localStorage.removeItem('hovercam_whiteboard_canvas');
+                // Clear objects
+                state.objects = [];
+                objectLayer.innerHTML = '';
+                localStorage.removeItem('hovercam_whiteboard_objects');
+                state.selectedObject = null;
+                // Reset history
+                state.history = [];
+                state.historyIndex = -1;
+                saveState();
+                
+                modal.classList.remove('visible');
+                setTimeout(() => modal.remove(), 200);
+                
+                self.showNotification('Whiteboard cleared', 'success');
+            });
+            
+            // Click outside to cancel
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('visible');
+                    setTimeout(() => modal.remove(), 200);
+                }
+            });
+        };
 
         // Close slideouts when clicking canvas
         canvas.addEventListener('click', closeAllSlideouts);

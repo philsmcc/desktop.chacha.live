@@ -1415,6 +1415,107 @@ body.dark-mode .desktop-icon-label {
     z-index: 1000;
 }
 
+/* ==================== CLEAR CONFIRMATION MODAL ==================== */
+.wb-confirm-modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.wb-confirm-modal.visible {
+    opacity: 1;
+}
+
+.wb-confirm-content {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 24px 32px;
+    text-align: center;
+    max-width: 320px;
+    transform: scale(0.9);
+    transition: transform 0.2s ease;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.wb-confirm-modal.visible .wb-confirm-content {
+    transform: scale(1);
+}
+
+.wb-confirm-icon {
+    width: 56px;
+    height: 56px;
+    background: rgba(229, 57, 53, 0.15);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+}
+
+.wb-confirm-icon svg {
+    width: 28px;
+    height: 28px;
+    stroke: #e53935;
+}
+
+.wb-confirm-content h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.wb-confirm-content p {
+    margin: 0 0 20px;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.wb-confirm-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.wb-confirm-buttons button {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.wb-confirm-cancel {
+    background: var(--bg-darker);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color) !important;
+}
+
+.wb-confirm-cancel:hover {
+    background: var(--bg-card-hover);
+}
+
+.wb-confirm-yes {
+    background: #e53935;
+    color: #ffffff;
+}
+
+.wb-confirm-yes:hover {
+    background: #c62828;
+}
+
 /* ==================== RESPONSIVE - TOUCH PANELS ==================== */
 @media (min-width: 1920px) {
     .wb-floating-toolbar {
