@@ -1481,7 +1481,10 @@ class DesktopOS {
             const rect = container.getBoundingClientRect();
             const dpr = window.devicePixelRatio || 1;
             
-            const imageData = canvas.width > 0 ? ctx.getImageData(0, 0, canvas.width, canvas.height) : null;
+            // Save current canvas as image
+            const tempImage = canvas.width > 0 && canvas.height > 0 ? canvas.toDataURL() : null;
+            const oldWidth = canvas.width;
+            const oldHeight = canvas.height;
             
             canvas.width = rect.width * dpr;
             canvas.height = rect.height * dpr;
@@ -1495,8 +1498,13 @@ class DesktopOS {
             ctx.fillStyle = state.bgColor;
             ctx.fillRect(0, 0, rect.width, rect.height);
             
-            if (imageData) {
-                ctx.putImageData(imageData, 0, 0);
+            // Restore canvas content
+            if (tempImage && oldWidth > 0) {
+                const img = new Image();
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0, oldWidth / dpr, oldHeight / dpr);
+                };
+                img.src = tempImage;
             }
         };
 
