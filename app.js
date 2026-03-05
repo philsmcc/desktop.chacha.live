@@ -1486,58 +1486,103 @@ class DesktopOS {
 
     // Paste image to whiteboard canvas
     pasteImageToWhiteboard(imageSrc) {
+        console.log('Pasting image to whiteboard:', imageSrc);
+        
         // Find or open whiteboard
-        let whiteboardWindow = this.windows.get('whiteboard');
-        if (!whiteboardWindow) {
+        let whiteboardData = this.windows.get('whiteboard');
+        if (!whiteboardData) {
             this.openApp('whiteboard');
-            whiteboardWindow = this.windows.get('whiteboard');
+            // Need a small delay for the whiteboard to initialize
+            setTimeout(() => this.pasteImageToWhiteboard(imageSrc), 200);
+            return;
         }
 
-        if (whiteboardWindow) {
-            const canvas = whiteboardWindow.querySelector('.wb-canvas');
-            if (canvas) {
-                const ctx = canvas.getContext('2d');
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
-                img.onload = () => {
-                    // Scale image to fit nicely on canvas
-                    const maxWidth = canvas.width * 0.4 / (window.devicePixelRatio || 1);
-                    const maxHeight = canvas.height * 0.4 / (window.devicePixelRatio || 1);
-                    let width = img.width;
-                    let height = img.height;
-                    
-                    if (width > maxWidth) {
-                        height = height * (maxWidth / width);
-                        width = maxWidth;
-                    }
-                    if (height > maxHeight) {
-                        width = width * (maxHeight / height);
-                        height = maxHeight;
-                    }
-                    
-                    // Draw in center
-                    const x = (canvas.width / (window.devicePixelRatio || 1) - width) / 2;
-                    const y = (canvas.height / (window.devicePixelRatio || 1) - height) / 2;
-                    ctx.drawImage(img, x, y, width, height);
-                    
-                    // Save state for undo
-                    this.saveWhiteboardState();
-                    
-                    this.showNotification('Image added to Whiteboard!', 'success');
-                };
-                img.onerror = () => {
-                    this.showNotification('Could not load image (CORS restriction)', 'error');
-                };
-                img.src = imageSrc;
-            }
+        const windowEl = whiteboardData.element;
+        if (!windowEl) {
+            console.error('Whiteboard window element not found');
+            this.showNotification('Could not find Whiteboard window', 'error');
+            return;
         }
+
+        const canvas = windowEl.querySelector('.wb-canvas');
+        if (!canvas) {
+            console.error('Whiteboard canvas not found');
+            this.showNotification('Could not find Whiteboard canvas', 'error');
+            return;
+        }
+
+        const ctx = canvas.getContext('2d');
+        const self = this;
+        
+        const drawImageToCanvas = (img) => {
+            console.log('Image loaded:', img.width, 'x', img.height);
+            
+            // Scale image to fit nicely on canvas
+            const dpr = window.devicePixelRatio || 1;
+            const canvasWidth = canvas.width / dpr;
+            const canvasHeight = canvas.height / dpr;
+            const maxWidth = canvasWidth * 0.4;
+            const maxHeight = canvasHeight * 0.4;
+            
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > maxWidth) {
+                height = height * (maxWidth / width);
+                width = maxWidth;
+            }
+            if (height > maxHeight) {
+                width = width * (maxHeight / height);
+                height = maxHeight;
+            }
+            
+            // Draw in center
+            const x = (canvasWidth - width) / 2;
+            const y = (canvasHeight - height) / 2;
+            
+            console.log('Drawing at:', x, y, 'size:', width, height);
+            ctx.drawImage(img, x, y, width, height);
+            
+            // Save state for undo and persistence
+            if (windowEl.whiteboardSaveState) {
+                windowEl.whiteboardSaveState();
+            }
+            
+            self.showNotification('Image added to Whiteboard!', 'success');
+        };
+        
+        // Try loading without CORS first (works for display, but can't save to canvas state properly)
+        // Then try with CORS for images that support it
+        const img = new Image();
+        
+        img.onload = () => {
+            drawImageToCanvas(img);
+        };
+        
+        img.onerror = (e) => {
+            console.error('Image load error, trying with proxy...');
+            // Try using a CORS proxy as fallback
+            const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(imageSrc);
+            const proxyImg = new Image();
+            proxyImg.crossOrigin = 'anonymous';
+            proxyImg.onload = () => {
+                drawImageToCanvas(proxyImg);
+            };
+            proxyImg.onerror = () => {
+                self.showNotification('Could not load image - try a different image URL', 'error');
+            };
+            proxyImg.src = proxyUrl;
+        };
+        
+        // First try direct load (no CORS attribute for maximum compatibility)
+        img.src = imageSrc;
     }
 
     // Save whiteboard state (called after paste)
     saveWhiteboardState() {
-        const whiteboardWindow = this.windows.get('whiteboard');
-        if (whiteboardWindow && whiteboardWindow.whiteboardSaveState) {
-            whiteboardWindow.whiteboardSaveState();
+        const whiteboardData = this.windows.get('whiteboard');
+        if (whiteboardData && whiteboardData.element && whiteboardData.element.whiteboardSaveState) {
+            whiteboardData.element.whiteboardSaveState();
         }
     }
 
