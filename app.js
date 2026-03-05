@@ -399,6 +399,11 @@ class DesktopOS {
             localStorage.setItem("hovercam_token", this.token);
             localStorage.setItem("hovercam_session", JSON.stringify(this.currentUser));
             
+            // Clean up old shared whiteboard data (from before user-specific storage)
+            localStorage.removeItem('hovercam_whiteboard_canvas');
+            localStorage.removeItem('hovercam_whiteboard_bgColor');
+            localStorage.removeItem('hovercam_whiteboard_objects');
+            
             errorDiv.textContent = "";
             await this.loadUserPreferences();
             this.showDesktop();
@@ -1078,6 +1083,10 @@ class DesktopOS {
         const toolbar = windowEl.querySelector('.wb-floating-toolbar');
         const self = this;
         
+        // User-specific storage keys
+        const userId = self.currentUser?.username || 'guest';
+        const storageKey = (key) => `hovercam_wb_${userId}_${key}`;
+        
         // Create object overlay layer for manipulable objects
         const objectLayer = document.createElement('div');
         objectLayer.className = 'wb-object-layer';
@@ -1456,7 +1465,7 @@ class DesktopOS {
         const saveObjectsState = () => {
             try {
                 const objectsData = state.objects.map(obj => ({...obj}));
-                localStorage.setItem('hovercam_whiteboard_objects', JSON.stringify(objectsData));
+                localStorage.setItem(storageKey('objects'), JSON.stringify(objectsData));
             } catch(e) {
                 console.warn('Could not save objects:', e);
             }
@@ -1465,7 +1474,7 @@ class DesktopOS {
         // Load objects from localStorage
         const loadObjectsState = () => {
             try {
-                const saved = localStorage.getItem('hovercam_whiteboard_objects');
+                const saved = localStorage.getItem(storageKey('objects'));
                 if (saved) {
                     const objects = JSON.parse(saved);
                     objects.forEach(obj => {
@@ -1729,8 +1738,8 @@ class DesktopOS {
         const persistCanvas = () => {
             try {
                 const canvasData = virtualCanvas.toDataURL('image/png');
-                localStorage.setItem('hovercam_whiteboard_canvas', canvasData);
-                localStorage.setItem('hovercam_whiteboard_bgColor', state.bgColor);
+                localStorage.setItem(storageKey('canvas'), canvasData);
+                localStorage.setItem(storageKey('bgColor'), state.bgColor);
             } catch(e) {
                 console.warn('Could not persist whiteboard:', e);
             }
@@ -1739,8 +1748,8 @@ class DesktopOS {
         // Load persisted canvas
         const loadPersistedCanvas = () => {
             try {
-                const savedCanvas = localStorage.getItem('hovercam_whiteboard_canvas');
-                const savedBgColor = localStorage.getItem('hovercam_whiteboard_bgColor');
+                const savedCanvas = localStorage.getItem(storageKey('canvas'));
+                const savedBgColor = localStorage.getItem(storageKey('bgColor'));
                 
                 if (savedBgColor) {
                     state.bgColor = savedBgColor;
@@ -2134,11 +2143,11 @@ class DesktopOS {
                 ctx.fillStyle = state.bgColor;
                 ctx.fillRect(0, 0, rect.width, rect.height);
                 // Clear persisted canvas
-                localStorage.removeItem('hovercam_whiteboard_canvas');
+                localStorage.removeItem(storageKey('canvas'));
                 // Clear objects
                 state.objects = [];
                 objectLayer.innerHTML = '';
-                localStorage.removeItem('hovercam_whiteboard_objects');
+                localStorage.removeItem(storageKey('objects'));
                 state.selectedObject = null;
                 // Reset history
                 state.history = [];
