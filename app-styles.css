@@ -88,7 +88,8 @@ body.dark-mode .desktop-icon-label {
 }
 
 /* ==================== TOPBAR FULLSCREEN BUTTON ==================== */
-.topbar-fullscreen-btn {
+.topbar-fullscreen-btn,
+.topbar-restore-btn {
     width: 32px;
     height: 32px;
     display: flex;
@@ -102,20 +103,27 @@ body.dark-mode .desktop-icon-label {
     margin-left: 8px;
 }
 
-.topbar-fullscreen-btn:hover {
+.topbar-fullscreen-btn:hover,
+.topbar-restore-btn:hover {
     background: var(--primary-color);
     border-color: var(--primary-color);
 }
 
-.topbar-fullscreen-btn svg {
+.topbar-fullscreen-btn svg,
+.topbar-restore-btn svg {
     width: 16px;
     height: 16px;
     stroke: var(--text-secondary);
     transition: var(--transition);
 }
 
-.topbar-fullscreen-btn:hover svg {
+.topbar-fullscreen-btn:hover svg,
+.topbar-restore-btn:hover svg {
     stroke: white;
+}
+
+.topbar-restore-btn.hidden {
+    display: none;
 }
 
 /* ==================== SETTINGS CATEGORIES ==================== */

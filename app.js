@@ -196,6 +196,11 @@ class DesktopOS {
         document.getElementById("topbar-fullscreen").addEventListener("click", () => {
             this.toggleFullscreen();
         });
+        
+        // Topbar restore button
+        document.getElementById("topbar-restore").addEventListener("click", () => {
+            this.restoreMaximizedWindow();
+        });
     }
 
     bindFullscreenEvents() {
@@ -829,6 +834,7 @@ class DesktopOS {
         this.windows.delete(appId);
         this.updateTaskbarActive(appId, false);
         document.getElementById("topbar-title").textContent = "Desktop";
+        this.updateRestoreButton();
     }
 
     minimizeWindow(appId) {
@@ -843,6 +849,7 @@ class DesktopOS {
         if (!win) return;
         
         const isMaximized = win.element.classList.contains("maximized");
+        const restoreBtn = document.getElementById("topbar-restore");
         
         if (!isMaximized) {
             // Save current position/size before maximizing
@@ -853,6 +860,8 @@ class DesktopOS {
                 height: win.element.style.height
             };
             win.element.classList.add("maximized");
+            this.maximizedWindowId = appId;
+            if (restoreBtn) restoreBtn.classList.remove("hidden");
         } else {
             // Restore previous position/size
             if (win.savedState) {
@@ -862,6 +871,28 @@ class DesktopOS {
                 win.element.style.height = win.savedState.height;
             }
             win.element.classList.remove("maximized");
+            this.maximizedWindowId = null;
+            this.updateRestoreButton();
+        }
+    }
+    
+    updateRestoreButton() {
+        const restoreBtn = document.getElementById("topbar-restore");
+        if (!restoreBtn) return;
+        let hasMaximized = false;
+        this.windows.forEach((win, appId) => {
+            if (win.element.classList.contains("maximized")) {
+                hasMaximized = true;
+                this.maximizedWindowId = appId;
+            }
+        });
+        restoreBtn.classList.toggle("hidden", !hasMaximized);
+        if (!hasMaximized) this.maximizedWindowId = null;
+    }
+    
+    restoreMaximizedWindow() {
+        if (this.maximizedWindowId) {
+            this.maximizeWindow(this.maximizedWindowId);
         }
     }
 
