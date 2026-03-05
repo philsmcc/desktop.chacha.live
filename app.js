@@ -209,6 +209,57 @@ class DesktopOS {
         document.getElementById("topbar-restore").addEventListener("click", () => {
             this.restoreMaximizedWindow();
         });
+        
+        // Desktop drop zone for camera snapshots
+        const iconContainer = document.getElementById("icon-container");
+        if (iconContainer) {
+            iconContainer.addEventListener('dragover', (e) => {
+                // Check if it's a camera snapshot
+                if (e.dataTransfer.types.includes('application/x-camera-snapshot') ||
+                    e.dataTransfer.types.includes('text/uri-list')) {
+                    e.preventDefault();
+                    iconContainer.classList.add('drag-over');
+                }
+            });
+            
+            iconContainer.addEventListener('dragleave', (e) => {
+                if (!iconContainer.contains(e.relatedTarget)) {
+                    iconContainer.classList.remove('drag-over');
+                }
+            });
+            
+            iconContainer.addEventListener('drop', (e) => {
+                iconContainer.classList.remove('drag-over');
+                const dataUrl = e.dataTransfer.getData('application/x-camera-snapshot') ||
+                               e.dataTransfer.getData('text/uri-list') ||
+                               e.dataTransfer.getData('text/plain');
+                
+                if (dataUrl && dataUrl.startsWith('data:image')) {
+                    e.preventDefault();
+                    // Create a desktop icon for the snapshot
+                    this.createDesktopSnapshot(dataUrl, e.clientX, e.clientY);
+                }
+            });
+        }
+    }
+    
+    createDesktopSnapshot(dataUrl, x, y) {
+        // Convert data URL to blob and trigger download
+        fetch(dataUrl)
+            .then(res => res.blob())
+            .then(blob => {
+                const filename = `snapshot-${Date.now()}.jpg`;
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+                this.showNotification(`Saved: ${filename}`, 'success');
+            })
+            .catch(err => {
+                console.error('Failed to save snapshot:', err);
+                this.showNotification('Failed to save snapshot', 'error');
+            });
     }
 
     bindFullscreenEvents() {
@@ -2436,13 +2487,15 @@ class DesktopOS {
         const canvas = app.querySelector('.camera-canvas');
         const placeholder = app.querySelector('.camera-placeholder');
         const dragOverlay = app.querySelector('.camera-drag-overlay');
-        const toolbar = app.querySelector('.camera-toolbar');
+        const viewport = app.querySelector('.camera-viewport');
+        const controls = app.querySelector('.camera-controls');
         const startBtn = app.querySelector('.camera-start-btn');
         const snapshotBtn = app.querySelector('.camera-snapshot-btn');
-        const rotationDisplay = app.querySelector('.camera-rotation');
-        const mirrorDisplay = app.querySelector('.camera-mirror-status');
-        const stateDisplay = app.querySelector('.camera-state');
-        const viewport = app.querySelector('.camera-viewport');
+        const settingsBtn = app.querySelector('.camera-settings-btn');
+        const settingsPopover = app.querySelector('.camera-settings-popover');
+        const rotationValue = app.querySelector('.camera-rotation-value');
+        const mirrorValue = app.querySelector('.camera-mirror-value');
+        const stateBadge = app.querySelector('.camera-state-badge');
         
         let stream = null;
         let rotation = 90; // Default 90° for document cameras
@@ -2464,13 +2517,13 @@ class DesktopOS {
                 video.style.height = '100%';
             }
             
-            rotationDisplay.textContent = rotation + '°';
-            mirrorDisplay.textContent = mirrored ? 'M' : '';
+            rotationValue.textContent = rotation + '°';
+            mirrorValue.textContent = mirrored ? 'On' : 'Off';
         };
         
         const startCamera = async () => {
             try {
-                stateDisplay.textContent = 'Starting...';
+                stateBadge.textContent = 'Starting...';
                 stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { 
                         width: { ideal: 1920 },
@@ -2481,14 +2534,15 @@ class DesktopOS {
                 video.play();
                 placeholder.classList.add('hidden');
                 isActive = true;
-                stateDisplay.textContent = 'Active';
+                stateBadge.textContent = 'Live';
+                stateBadge.classList.add('active');
                 startBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
                 startBtn.classList.add('active');
                 snapshotBtn.disabled = false;
                 updateTransform();
             } catch (err) {
                 console.error('Camera error:', err);
-                stateDisplay.textContent = 'Error: ' + err.message;
+                stateBadge.textContent = 'Error';
                 this.showNotification('Camera access denied', 'error');
             }
         };
@@ -2501,7 +2555,8 @@ class DesktopOS {
             video.srcObject = null;
             placeholder.classList.remove('hidden');
             isActive = false;
-            stateDisplay.textContent = 'Stopped';
+            stateBadge.textContent = 'Stopped';
+            stateBadge.classList.remove('active');
             startBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
             startBtn.classList.remove('active');
             snapshotBtn.disabled = true;
@@ -2533,9 +2588,9 @@ class DesktopOS {
             return canvas.toDataURL('image/jpeg', 0.9);
         };
         
-        // Toolbar button handlers
-        toolbar.addEventListener('click', (e) => {
-            const btn = e.target.closest('.camera-btn');
+        // Control button handlers
+        controls.addEventListener('click', (e) => {
+            const btn = e.target.closest('.camera-ctrl-btn');
             if (!btn) return;
             
             const action = btn.dataset.action;
@@ -2549,26 +2604,49 @@ class DesktopOS {
             } else if (action === 'snapshot') {
                 const dataUrl = captureSnapshot();
                 if (dataUrl) {
-                    // Download the snapshot
                     const link = document.createElement('a');
                     link.download = `snapshot-${Date.now()}.jpg`;
                     link.href = dataUrl;
                     link.click();
                     this.showNotification('Snapshot saved', 'success');
                 }
-            } else if (action === 'rotate') {
+            }
+        });
+        
+        // Settings button toggle
+        settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            settingsPopover.classList.toggle('hidden');
+            settingsBtn.classList.toggle('active', !settingsPopover.classList.contains('hidden'));
+        });
+        
+        // Settings popover handlers
+        settingsPopover.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const btn = e.target.closest('.camera-setting-btn');
+            if (!btn) return;
+            
+            const action = btn.dataset.action;
+            
+            if (action === 'rotate') {
                 rotation = (rotation + 90) % 360;
                 if (isActive) updateTransform();
-                rotationDisplay.textContent = rotation + '°';
+                rotationValue.textContent = rotation + '°';
             } else if (action === 'mirror') {
                 mirrored = !mirrored;
                 btn.classList.toggle('active', mirrored);
                 if (isActive) updateTransform();
-                mirrorDisplay.textContent = mirrored ? 'M' : '';
+                mirrorValue.textContent = mirrored ? 'On' : 'Off';
             }
         });
         
-        // Make viewport draggable for whiteboard/files
+        // Close settings when clicking outside
+        app.addEventListener('click', () => {
+            settingsPopover.classList.add('hidden');
+            settingsBtn.classList.remove('active');
+        });
+        
+        // Make viewport draggable for desktop/whiteboard/files
         viewport.draggable = true;
         viewport.addEventListener('dragstart', (e) => {
             if (!isActive) {
@@ -2579,6 +2657,7 @@ class DesktopOS {
             if (dataUrl) {
                 e.dataTransfer.setData('text/uri-list', dataUrl);
                 e.dataTransfer.setData('text/plain', dataUrl);
+                e.dataTransfer.setData('application/x-camera-snapshot', dataUrl);
                 e.dataTransfer.effectAllowed = 'copy';
                 dragOverlay.classList.remove('hidden');
             }
@@ -2594,7 +2673,7 @@ class DesktopOS {
         };
         
         // Initialize display
-        rotationDisplay.textContent = rotation + '°';
+        rotationValue.textContent = rotation + '°';
     }
 
     initFiles(windowEl) {
@@ -2862,9 +2941,29 @@ class DesktopOS {
             }
         });
         
-        filesContainer.addEventListener('drop', (e) => {
+        filesContainer.addEventListener('drop', async (e) => {
             e.preventDefault();
             filesDropzone.classList.remove('active');
+            
+            // Check for camera snapshot first
+            const dataUrl = e.dataTransfer.getData('application/x-camera-snapshot') ||
+                           e.dataTransfer.getData('text/uri-list') ||
+                           e.dataTransfer.getData('text/plain');
+            
+            if (dataUrl && dataUrl.startsWith('data:image')) {
+                // Convert data URL to file and upload
+                try {
+                    const response = await fetch(dataUrl);
+                    const blob = await response.blob();
+                    const filename = `snapshot-${Date.now()}.jpg`;
+                    const file = new File([blob], filename, { type: 'image/jpeg' });
+                    handleFileUpload([file]);
+                } catch (err) {
+                    console.error('Failed to upload camera snapshot:', err);
+                    this.showNotification('Failed to upload snapshot', 'error');
+                }
+                return;
+            }
             
             if (e.dataTransfer.files.length > 0) {
                 handleFileUpload(e.dataTransfer.files);
@@ -2918,28 +3017,42 @@ class DesktopOS {
                     '<span>Click Start to begin</span>' +
                 '</div>' +
                 '<div class="camera-drag-overlay hidden">' +
-                    '<span>Drag to whiteboard or files</span>' +
+                    '<span>Drag to desktop, whiteboard, or files</span>' +
                 '</div>' +
-            '</div>' +
-            '<div class="camera-toolbar">' +
-                '<button class="camera-btn camera-start-btn" data-action="start" title="Start Camera">' +
-                    '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
-                '</button>' +
-                '<button class="camera-btn camera-snapshot-btn" data-action="snapshot" title="Take Snapshot" disabled>' +
-                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>' +
-                '</button>' +
-                '<div class="camera-toolbar-divider"></div>' +
-                '<button class="camera-btn" data-action="rotate" title="Rotate 90°">' +
-                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>' +
-                '</button>' +
-                '<button class="camera-btn" data-action="mirror" title="Mirror">' +
-                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg>' +
-                '</button>' +
-            '</div>' +
-            '<div class="camera-status">' +
-                '<span class="camera-rotation">90°</span>' +
-                '<span class="camera-mirror-status"></span>' +
-                '<span class="camera-state">Ready</span>' +
+                '<div class="camera-controls">' +
+                    '<button class="camera-ctrl-btn camera-start-btn" data-action="start" title="Start Camera">' +
+                        '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
+                    '</button>' +
+                    '<button class="camera-ctrl-btn camera-snapshot-btn" data-action="snapshot" title="Take Snapshot" disabled>' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>' +
+                    '</button>' +
+                '</div>' +
+                '<div class="camera-settings-wrapper">' +
+                    '<button class="camera-settings-btn" title="Camera Settings">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>' +
+                    '</button>' +
+                    '<div class="camera-settings-popover hidden">' +
+                        '<div class="camera-setting-item">' +
+                            '<span class="camera-setting-label">Rotation</span>' +
+                            '<div class="camera-setting-controls">' +
+                                '<button class="camera-setting-btn" data-action="rotate" title="Rotate 90°">' +
+                                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>' +
+                                '</button>' +
+                                '<span class="camera-rotation-value">90°</span>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="camera-setting-item">' +
+                            '<span class="camera-setting-label">Mirror</span>' +
+                            '<div class="camera-setting-controls">' +
+                                '<button class="camera-setting-btn" data-action="mirror" title="Toggle Mirror">' +
+                                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg>' +
+                                '</button>' +
+                                '<span class="camera-mirror-value">Off</span>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="camera-state-badge">Ready</div>' +
             '</div>' +
         '</div>';
     }
