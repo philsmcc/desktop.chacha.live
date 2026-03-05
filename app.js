@@ -1523,14 +1523,25 @@ class DesktopOS {
             };
         };
         
+        // Calculate minimum zoom to fill container
+        const getMinZoom = () => {
+            const containerW = container.offsetWidth || 800;
+            const containerH = container.offsetHeight || 600;
+            // Minimum zoom where canvas still fills container
+            return Math.max(containerW / CANVAS_WIDTH, containerH / CANVAS_HEIGHT);
+        };
+        
         // Zoom controls
         const zoomIn = () => {
             state.zoom = Math.min(state.zoom * 1.2, 3);
+            clampViewport();
             updateViewport();
         };
         
         const zoomOut = () => {
-            state.zoom = Math.max(state.zoom / 1.2, 0.25);
+            const minZoom = getMinZoom();
+            state.zoom = Math.max(state.zoom / 1.2, minZoom);
+            clampViewport();
             updateViewport();
         };
         
@@ -1539,6 +1550,16 @@ class DesktopOS {
             state.viewY = 0;
             state.zoom = 1;
             updateViewport();
+        };
+        
+        // Clamp viewport to valid range
+        const clampViewport = () => {
+            const containerW = container.offsetWidth || 800;
+            const containerH = container.offsetHeight || 600;
+            const maxX = Math.max(0, CANVAS_WIDTH * state.zoom - containerW);
+            const maxY = Math.max(0, CANVAS_HEIGHT * state.zoom - containerH);
+            state.viewX = Math.max(0, Math.min(state.viewX, maxX));
+            state.viewY = Math.max(0, Math.min(state.viewY, maxY));
         };
         
         // Update zoom label display
@@ -1603,7 +1624,8 @@ class DesktopOS {
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault();
                 const delta = -e.deltaY * 0.001;
-                const newZoom = Math.min(Math.max(state.zoom * (1 + delta), 0.25), 3);
+                const minZoom = getMinZoom();
+                const newZoom = Math.min(Math.max(state.zoom * (1 + delta), minZoom), 3);
                 
                 // Zoom towards cursor position
                 const rect = container.getBoundingClientRect();
@@ -1619,8 +1641,7 @@ class DesktopOS {
                 state.viewY = canvasY * state.zoom - mouseY;
                 
                 // Clamp view position
-                state.viewX = Math.max(0, Math.min(state.viewX, CANVAS_WIDTH * state.zoom - container.offsetWidth));
-                state.viewY = Math.max(0, Math.min(state.viewY, CANVAS_HEIGHT * state.zoom - container.offsetHeight));
+                clampViewport();
                 
                 updateViewport();
                 updateZoomLabel();
@@ -1802,8 +1823,7 @@ class DesktopOS {
                 state.viewY = viewStartY - dy;
                 
                 // Clamp
-                state.viewX = Math.max(0, Math.min(state.viewX, CANVAS_WIDTH * state.zoom - container.offsetWidth));
-                state.viewY = Math.max(0, Math.min(state.viewY, CANVAS_HEIGHT * state.zoom - container.offsetHeight));
+                clampViewport();
                 
                 updateViewport();
                 updateMinimap();
