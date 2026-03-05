@@ -1828,43 +1828,32 @@ class DesktopOS {
         const pathDisplay = windowEl.querySelector('.files-path');
         const statusText = windowEl.querySelector('.files-status');
         const uploadInput = windowEl.querySelector('.files-upload-input');
+        const self = this;
         
-        let currentPath = '/';
-        let files = [];
-        let folders = [];
+        let currentPath = '';
+        let currentFiles = [];
+        let currentFolders = [];
         
-        // Default folders
-        const defaultFolders = ['Documents', 'Pictures', 'Videos'];
-        
-        // Load files from localStorage (will integrate with S3 later)
-        const loadFiles = () => {
-            const savedData = localStorage.getItem('hovercam_files_' + this.currentUser?.username);
-            if (savedData) {
-                const data = JSON.parse(savedData);
-                files = data.files || [];
-                folders = data.folders || defaultFolders.map(f => ({ name: f, path: '/' + f }));
-            } else {
-                folders = defaultFolders.map(f => ({ name: f, path: '/' + f }));
-                files = [];
+        // Load files from S3
+        const loadFiles = async () => {
+            statusText.textContent = 'Loading...';
+            try {
+                const response = await self.api('/files?folder=' + encodeURIComponent(currentPath));
+                currentFolders = response.folders || [];
+                currentFiles = response.files || [];
+                renderFiles();
+                statusText.textContent = 'Ready';
+            } catch (error) {
+                console.error('Failed to load files:', error);
+                statusText.textContent = 'Failed to load files';
+                currentFolders = [];
+                currentFiles = [];
+                renderFiles();
             }
-            renderFiles();
-        };
-        
-        // Save files to localStorage
-        const saveFiles = () => {
-            const data = { files, folders };
-            localStorage.setItem('hovercam_files_' + this.currentUser?.username, JSON.stringify(data));
         };
         
         // Render files and folders
         const renderFiles = () => {
-            const currentFolders = folders.filter(f => {
-                const parentPath = f.path.substring(0, f.path.lastIndexOf('/')) || '/';
-                return parentPath === currentPath;
-            });
-            
-            const currentFiles = files.filter(f => f.folder === currentPath);
-            
             if (currentFolders.length === 0 && currentFiles.length === 0) {
                 filesGrid.innerHTML = '';
                 filesEmpty.classList.remove('hidden');
@@ -1875,7 +1864,7 @@ class DesktopOS {
                 
                 // Render folders
                 currentFolders.forEach(folder => {
-                    html += '<div class="file-item folder-item" data-type="folder" data-path="' + folder.path + '">' +
+                    html += '<div class="file-item folder-item" data-type="folder" data-path="' + folder.name + '">' +
                         '<div class="file-icon folder-icon">' +
                             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>' +
                         '</div>' +
@@ -1885,11 +1874,11 @@ class DesktopOS {
                 
                 // Render files
                 currentFiles.forEach((file, index) => {
-                    const isImage = file.type && file.type.startsWith('image/');
-                    html += '<div class="file-item" data-type="file" data-index="' + index + '" draggable="' + isImage + '">' +
+                    const isImage = file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                    html += '<div class="file-item" data-type="file" data-index="' + index + '" data-path="' + file.path + '" draggable="' + (isImage ? 'true' : 'false') + '">' +
                         '<div class="file-icon' + (isImage ? ' image-icon' : '') + '">' +
-                            (isImage && file.thumbnail ? 
-                                '<img src="' + file.thumbnail + '" alt="' + file.name + '">' :
+                            (isImage ? 
+                                '<img src="" alt="' + file.name + '" data-path="' + file.path + '" class="file-thumbnail">' :
                                 '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
                             ) +
                         '</div>' +
@@ -1899,27 +1888,40 @@ class DesktopOS {
                 
                 filesGrid.innerHTML = html;
                 
+                // Load thumbnails for images
+                filesGrid.querySelectorAll('.file-thumbnail').forEach(async img => {
+                    try {
+                        const response = await self.api('/files/url?path=' + encodeURIComponent(img.dataset.path));
+                        img.src = response.url;
+                    } catch (e) {
+                        console.error('Failed to load thumbnail:', e);
+                    }
+                });
+                
                 // Add click handlers for folders
                 filesGrid.querySelectorAll('.folder-item').forEach(item => {
                     item.addEventListener('dblclick', () => {
-                        currentPath = item.dataset.path;
+                        const folderName = item.dataset.path;
+                        currentPath = currentPath ? currentPath + '/' + folderName : folderName;
                         updatePath();
-                        renderFiles();
+                        loadFiles();
                     });
                 });
                 
                 // Add drag handlers for image files
                 filesGrid.querySelectorAll('.file-item[draggable="true"]').forEach(item => {
-                    item.addEventListener('dragstart', (e) => {
-                        const index = parseInt(item.dataset.index);
-                        const file = currentFiles[index];
-                        if (file && file.data) {
-                            e.dataTransfer.setData('text/plain', file.data);
+                    item.addEventListener('dragstart', async (e) => {
+                        const filePath = item.dataset.path;
+                        try {
+                            const response = await self.api('/files/url?path=' + encodeURIComponent(filePath));
+                            e.dataTransfer.setData('text/plain', response.url);
                             e.dataTransfer.setData('application/hovercam-image', JSON.stringify({
-                                name: file.name,
-                                data: file.data
+                                name: currentFiles[item.dataset.index].name,
+                                url: response.url
                             }));
                             item.classList.add('dragging');
+                        } catch (err) {
+                            console.error('Failed to get file URL:', err);
                         }
                     });
                     
@@ -1941,10 +1943,10 @@ class DesktopOS {
         // Update path display
         const updatePath = () => {
             const parts = currentPath.split('/').filter(p => p);
-            let html = '<span class="path-segment" data-path="/">My Files</span>';
+            let html = '<span class="path-segment" data-path="">My Files</span>';
             let buildPath = '';
             parts.forEach(part => {
-                buildPath += '/' + part;
+                buildPath = buildPath ? buildPath + '/' + part : part;
                 html += '<span class="path-sep">/</span><span class="path-segment" data-path="' + buildPath + '">' + part + '</span>';
             });
             pathDisplay.innerHTML = html;
@@ -1954,7 +1956,7 @@ class DesktopOS {
                 seg.addEventListener('click', () => {
                     currentPath = seg.dataset.path;
                     updatePath();
-                    renderFiles();
+                    loadFiles();
                 });
             });
         };
@@ -1972,19 +1974,31 @@ class DesktopOS {
             menu.style.top = e.clientY + 'px';
             document.body.appendChild(menu);
             
-            menu.querySelector('[data-action="delete"]').addEventListener('click', () => {
-                if (item.dataset.type === 'folder') {
-                    const path = item.dataset.path;
-                    folders = folders.filter(f => !f.path.startsWith(path));
-                    files = files.filter(f => !f.folder.startsWith(path));
+            menu.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+                const type = item.dataset.type;
+                let pathToDelete;
+                
+                if (type === 'folder') {
+                    pathToDelete = currentPath ? currentPath + '/' + item.dataset.path : item.dataset.path;
                 } else {
-                    const index = parseInt(item.dataset.index);
-                    const currentFiles = files.filter(f => f.folder === currentPath);
-                    const fileToDelete = currentFiles[index];
-                    files = files.filter(f => f !== fileToDelete);
+                    // Extract relative path from full S3 path
+                    const fullPath = item.dataset.path;
+                    const filesIndex = fullPath.indexOf('/files/');
+                    pathToDelete = filesIndex !== -1 ? fullPath.substring(filesIndex + 7) : fullPath;
                 }
-                saveFiles();
-                renderFiles();
+                
+                statusText.textContent = 'Deleting...';
+                try {
+                    await self.api('/files', {
+                        method: 'DELETE',
+                        body: JSON.stringify({ path: pathToDelete, type })
+                    });
+                    statusText.textContent = 'Deleted successfully';
+                    loadFiles();
+                } catch (error) {
+                    console.error('Delete failed:', error);
+                    statusText.textContent = 'Failed to delete';
+                }
                 menu.remove();
             });
             
@@ -1998,46 +2012,55 @@ class DesktopOS {
         };
         
         // Create new folder
-        const createFolder = () => {
+        const createFolder = async () => {
             const name = prompt('Enter folder name:');
             if (name && name.trim()) {
-                const folderPath = currentPath === '/' ? '/' + name.trim() : currentPath + '/' + name.trim();
-                if (!folders.find(f => f.path === folderPath)) {
-                    folders.push({ name: name.trim(), path: folderPath });
-                    saveFiles();
-                    renderFiles();
+                const folderPath = currentPath ? currentPath + '/' + name.trim() : name.trim();
+                statusText.textContent = 'Creating folder...';
+                try {
+                    await self.api('/files/folder', {
+                        method: 'POST',
+                        body: JSON.stringify({ path: folderPath })
+                    });
                     statusText.textContent = 'Folder created: ' + name.trim();
-                } else {
-                    statusText.textContent = 'Folder already exists';
+                    loadFiles();
+                } catch (error) {
+                    console.error('Failed to create folder:', error);
+                    statusText.textContent = 'Failed to create folder';
                 }
             }
         };
         
         // Handle file upload
-        const handleFiles = (fileList) => {
-            Array.from(fileList).forEach(file => {
+        const handleFileUpload = async (fileList) => {
+            for (const file of fileList) {
                 if (file.type.startsWith('image/')) {
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        const newFile = {
-                            name: file.name,
-                            type: file.type,
-                            size: file.size,
-                            data: e.target.result,
-                            thumbnail: e.target.result,
-                            folder: currentPath,
-                            uploaded: Date.now()
-                        };
-                        files.push(newFile);
-                        saveFiles();
-                        renderFiles();
+                    statusText.textContent = 'Uploading: ' + file.name;
+                    
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    
+                    try {
+                        const response = await fetch('/api/files/upload?folder=' + encodeURIComponent(currentPath), {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': 'Bearer ' + self.token
+                            },
+                            body: formData
+                        });
+                        
+                        if (!response.ok) throw new Error('Upload failed');
+                        
                         statusText.textContent = 'Uploaded: ' + file.name;
-                    };
-                    reader.readAsDataURL(file);
+                        loadFiles();
+                    } catch (error) {
+                        console.error('Upload failed:', error);
+                        statusText.textContent = 'Failed to upload: ' + file.name;
+                    }
                 } else {
                     statusText.textContent = 'Only image files are supported';
                 }
-            });
+            }
         };
         
         // Drag and drop handlers
@@ -2057,7 +2080,7 @@ class DesktopOS {
             filesDropzone.classList.remove('active');
             
             if (e.dataTransfer.files.length > 0) {
-                handleFiles(e.dataTransfer.files);
+                handleFileUpload(e.dataTransfer.files);
             }
         });
         
@@ -2068,7 +2091,7 @@ class DesktopOS {
         
         uploadInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
-                handleFiles(e.target.files);
+                handleFileUpload(e.target.files);
                 e.target.value = '';
             }
         });
@@ -2078,17 +2101,18 @@ class DesktopOS {
         
         // Navigation buttons
         windowEl.querySelector('[data-action="back"]').addEventListener('click', () => {
-            if (currentPath !== '/') {
-                currentPath = currentPath.substring(0, currentPath.lastIndexOf('/')) || '/';
+            if (currentPath) {
+                const lastSlash = currentPath.lastIndexOf('/');
+                currentPath = lastSlash > 0 ? currentPath.substring(0, lastSlash) : '';
                 updatePath();
-                renderFiles();
+                loadFiles();
             }
         });
         
         windowEl.querySelector('[data-action="home"]').addEventListener('click', () => {
-            currentPath = '/';
+            currentPath = '';
             updatePath();
-            renderFiles();
+            loadFiles();
         });
         
         // Initial load

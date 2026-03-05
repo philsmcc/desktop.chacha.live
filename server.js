@@ -113,7 +113,7 @@ app.post('/api/auth/register', async (req, res) => {
         }));
 
         // Create user folders
-        const folders = ['wallpapers', 'files/documents', 'files/pictures', 'files/downloads'];
+        const folders = ['wallpapers', 'files/Documents', 'files/Pictures', 'files/Videos'];
         for (const folder of folders) {
             await s3Client.send(new PutObjectCommand({
                 Bucket: BUCKET,
@@ -538,6 +538,108 @@ app.post('/api/files/upload', authenticateToken, upload.single('file'), async (r
     } catch (error) {
         console.error('Upload file error:', error);
         res.status(500).json({ error: 'Failed to upload file' });
+    }
+});
+
+// Create folder
+app.post('/api/files/folder', authenticateToken, async (req, res) => {
+    try {
+        const { username } = req.user;
+        const { path: folderPath } = req.body;
+        
+        if (!folderPath) {
+            return res.status(400).json({ error: 'Folder path is required' });
+        }
+        
+        // Normalize path and create the folder marker
+        const normalizedPath = folderPath.replace(/^\/+|\/+$/g, '');
+        const key = `${getUserPrefix(username)}/files/${normalizedPath}/.keep`;
+        
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            Body: '',
+            ContentType: 'application/x-directory'
+        }));
+        
+        res.json({
+            message: 'Folder created successfully',
+            folder: {
+                name: normalizedPath.split('/').pop(),
+                path: normalizedPath
+            }
+        });
+    } catch (error) {
+        console.error('Create folder error:', error);
+        res.status(500).json({ error: 'Failed to create folder' });
+    }
+});
+
+// Delete file or folder
+app.delete('/api/files', authenticateToken, async (req, res) => {
+    try {
+        const { username } = req.user;
+        const { path: itemPath, type } = req.body;
+        
+        if (!itemPath) {
+            return res.status(400).json({ error: 'Path is required' });
+        }
+        
+        const userPrefix = getUserPrefix(username);
+        
+        if (type === 'folder') {
+            // Delete all objects in the folder
+            const prefix = `${userPrefix}/files/${itemPath}/`.replace(/\/+/g, '/');
+            
+            const listResponse = await s3Client.send(new ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: prefix
+            }));
+            
+            if (listResponse.Contents && listResponse.Contents.length > 0) {
+                for (const item of listResponse.Contents) {
+                    await s3Client.send(new DeleteObjectCommand({
+                        Bucket: BUCKET,
+                        Key: item.Key
+                    }));
+                }
+            }
+        } else {
+            // Delete single file
+            const key = `${userPrefix}/files/${itemPath}`.replace(/\/+/g, '/');
+            await s3Client.send(new DeleteObjectCommand({
+                Bucket: BUCKET,
+                Key: key
+            }));
+        }
+        
+        res.json({ message: 'Deleted successfully' });
+    } catch (error) {
+        console.error('Delete error:', error);
+        res.status(500).json({ error: 'Failed to delete' });
+    }
+});
+
+// Get signed URL for file access
+app.get('/api/files/url', authenticateToken, async (req, res) => {
+    try {
+        const { path: filePath } = req.query;
+        
+        if (!filePath) {
+            return res.status(400).json({ error: 'File path is required' });
+        }
+        
+        const command = new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: filePath
+        });
+        
+        const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+        
+        res.json({ url: signedUrl });
+    } catch (error) {
+        console.error('Get URL error:', error);
+        res.status(500).json({ error: 'Failed to get file URL' });
     }
 });
 
