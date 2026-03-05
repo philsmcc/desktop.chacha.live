@@ -185,60 +185,316 @@ body.dark-mode .desktop-icon-label {
 
 /* Files App */
 .files-app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
     color: var(--text-secondary);
 }
 
 .files-toolbar {
     display: flex;
+    align-items: center;
     gap: 12px;
-    margin-bottom: 20px;
-    padding-bottom: 16px;
+    padding: 12px 16px;
+    background: var(--bg-card);
     border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
 }
 
-.files-btn {
-    padding: 8px 16px;
+.files-nav {
+    display: flex;
+    gap: 4px;
+}
+
+.files-nav-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.files-nav-btn:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--primary-color);
+}
+
+.files-nav-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--text-secondary);
+}
+
+.files-path {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    overflow: hidden;
+}
+
+.path-segment {
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.2s;
+    white-space: nowrap;
+}
+
+.path-segment:hover {
+    background: var(--bg-card-hover);
+    color: var(--primary-color);
+}
+
+.path-sep {
+    color: var(--text-muted);
+}
+
+.files-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.files-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
     background: var(--bg-darker);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     color: var(--text-primary);
+    font-size: 13px;
     cursor: pointer;
-    transition: var(--transition);
+    transition: all 0.2s;
 }
 
-.files-btn:hover {
-    background: var(--bg-card-hover);
+.files-action-btn:hover {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
+
+.files-action-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+}
+
+.files-container {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    padding: 16px;
+}
+
+.files-dropzone {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(245, 124, 0, 0.1);
+    border: 3px dashed var(--primary-color);
+    border-radius: 12px;
+    margin: 16px;
+    z-index: 10;
+}
+
+.files-dropzone.active {
+    display: flex;
+}
+
+.dropzone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    color: var(--primary-color);
+}
+
+.dropzone-content svg {
+    width: 48px;
+    height: 48px;
+    stroke: var(--primary-color);
+}
+
+.dropzone-content p {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.dropzone-content span {
+    font-size: 14px;
+    color: var(--text-muted);
 }
 
 .files-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 12px;
 }
 
-.folder-item {
+.file-item {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    padding: 16px;
+    padding: 12px;
     border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.file-item:hover {
+    background: var(--bg-card-hover);
+}
+
+.file-item.dragging {
+    opacity: 0.5;
+    transform: scale(0.95);
+}
+
+.file-icon {
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-darker);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s;
+}
+
+.file-item:hover .file-icon {
+    border-color: var(--primary-color);
+}
+
+.file-icon svg {
+    width: 32px;
+    height: 32px;
+    stroke: var(--primary-color);
+}
+
+.file-icon.folder-icon {
+    background: rgba(245, 124, 0, 0.1);
+}
+
+.file-icon.image-icon {
+    padding: 0;
+    overflow: hidden;
+}
+
+.file-icon.image-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.file-name {
+    font-size: 12px;
+    color: var(--text-primary);
+    text-align: center;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.files-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 60px 20px;
+    color: var(--text-muted);
+}
+
+.files-empty.hidden {
+    display: none;
+}
+
+.files-empty svg {
+    width: 64px;
+    height: 64px;
+    stroke: var(--border-color);
+}
+
+.files-empty p {
+    font-size: 16px;
+    margin: 0;
+}
+
+.files-empty span {
+    font-size: 14px;
+}
+
+.files-statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+    font-size: 12px;
+}
+
+.files-status {
+    color: var(--text-secondary);
+}
+
+.files-hint {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Context Menu */
+.files-context-menu {
+    position: fixed;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    z-index: 10000;
+    overflow: hidden;
+}
+
+.files-context-menu button {
+    display: block;
+    width: 100%;
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 14px;
+    text-align: left;
     cursor: pointer;
     transition: background 0.2s;
 }
 
-.folder-item:hover {
+.files-context-menu button:hover {
     background: var(--bg-card-hover);
 }
 
-.folder-item svg {
-    width: 40px;
-    height: 40px;
-}
-
-.folder-item span {
-    font-size: 13px;
-    color: var(--text-primary);
+/* Whiteboard drag-over state */
+.wb-canvas-container.drag-over {
+    outline: 3px dashed var(--primary-color);
+    outline-offset: -3px;
+    background: rgba(245, 124, 0, 0.05);
 }
 
 /* Terminal App */

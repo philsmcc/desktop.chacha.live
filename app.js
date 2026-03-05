@@ -578,6 +578,10 @@ class DesktopOS {
         if (appId === "browser") {
             setTimeout(() => this.initBrowser(windowEl), 50);
         }
+        
+        if (appId === "files") {
+            setTimeout(() => this.initFiles(windowEl), 50);
+        }
     }
 
     bindSettingsEvents(windowEl) {
@@ -1288,6 +1292,54 @@ class DesktopOS {
 
         // Close slideouts when clicking canvas
         canvas.addEventListener('click', closeAllSlideouts);
+        
+        // Drag and drop image support
+        container.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            container.classList.add('drag-over');
+        });
+        
+        container.addEventListener('dragleave', (e) => {
+            if (!container.contains(e.relatedTarget)) {
+                container.classList.remove('drag-over');
+            }
+        });
+        
+        container.addEventListener('drop', (e) => {
+            e.preventDefault();
+            container.classList.remove('drag-over');
+            
+            // Check for files from computer
+            if (e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        this.drawImageOnWhiteboard(canvas, ctx, event.target.result, e, state, saveState);
+                    };
+                    reader.readAsDataURL(file);
+                }
+                return;
+            }
+            
+            // Check for image from Files app
+            const hovercamData = e.dataTransfer.getData('application/hovercam-image');
+            if (hovercamData) {
+                try {
+                    const imageData = JSON.parse(hovercamData);
+                    this.drawImageOnWhiteboard(canvas, ctx, imageData.data, e, state, saveState);
+                } catch(err) {
+                    console.error('Failed to parse image data:', err);
+                }
+                return;
+            }
+            
+            // Check for image URL
+            const imageUrl = e.dataTransfer.getData('text/plain');
+            if (imageUrl && (imageUrl.startsWith('data:image') || imageUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i))) {
+                this.drawImageOnWhiteboard(canvas, ctx, imageUrl, e, state, saveState);
+            }
+        });
 
         // Initialize previews
         updateColorPreview();
@@ -1676,19 +1728,372 @@ class DesktopOS {
             whiteboardData.element.whiteboardSaveState();
         }
     }
+    
+    // Draw image on whiteboard at drop position
+    drawImageOnWhiteboard(canvas, ctx, imageSrc, dropEvent, state, saveState) {
+        const img = new Image();
+        img.onload = () => {
+            const dpr = window.devicePixelRatio || 1;
+            const canvasRect = canvas.getBoundingClientRect();
+            const canvasWidth = canvas.width / dpr;
+            const canvasHeight = canvas.height / dpr;
+            
+            // Calculate drop position relative to canvas
+            let dropX = (dropEvent.clientX - canvasRect.left);
+            let dropY = (dropEvent.clientY - canvasRect.top);
+            
+            // Scale image to reasonable size (max 30% of canvas)
+            const maxWidth = canvasWidth * 0.3;
+            const maxHeight = canvasHeight * 0.3;
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > maxWidth) {
+                height = height * (maxWidth / width);
+                width = maxWidth;
+            }
+            if (height > maxHeight) {
+                width = width * (maxHeight / height);
+                height = maxHeight;
+            }
+            
+            // Center image on drop point
+            const x = dropX - width / 2;
+            const y = dropY - height / 2;
+            
+            ctx.drawImage(img, x, y, width, height);
+            saveState();
+            
+            this.showNotification('Image added to Whiteboard!', 'success');
+        };
+        img.onerror = () => {
+            this.showNotification('Could not load image', 'error');
+        };
+        img.src = imageSrc;
+    }
 
     renderFilesApp() {
-        const folders = ["Documents", "Pictures", "Videos", "Music", "Downloads"];
-        return '<div class="files-app">' +
+        return '<div class="files-app" data-app-id="files">' +
             '<div class="files-toolbar">' +
-                '<button class="files-btn">Home</button>' +
-                '<button class="files-btn">Documents</button>' +
-                '<button class="files-btn">Downloads</button>' +
+                '<div class="files-nav">' +
+                    '<button class="files-nav-btn" data-action="back" title="Back">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>' +
+                    '</button>' +
+                    '<button class="files-nav-btn" data-action="home" title="Home">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>' +
+                    '</button>' +
+                '</div>' +
+                '<div class="files-path">' +
+                    '<span class="path-segment" data-path="/">My Files</span>' +
+                '</div>' +
+                '<div class="files-actions">' +
+                    '<button class="files-action-btn" data-action="newfolder" title="New Folder">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>' +
+                        '<span>New Folder</span>' +
+                    '</button>' +
+                    '<button class="files-action-btn" data-action="upload" title="Upload Files">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>' +
+                        '<span>Upload</span>' +
+                    '</button>' +
+                '</div>' +
             '</div>' +
-            '<div class="files-grid">' + folders.map(folder => 
-                '<div class="folder-item"><svg viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg><span>' + folder + '</span></div>'
-            ).join("") + '</div>' +
+            '<div class="files-container">' +
+                '<div class="files-dropzone">' +
+                    '<div class="dropzone-content">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>' +
+                        '<p>Drop files here to upload</p>' +
+                        '<span>or click Upload button</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="files-grid"></div>' +
+                '<div class="files-empty hidden">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>' +
+                    '<p>This folder is empty</p>' +
+                    '<span>Drop files here or create a new folder</span>' +
+                '</div>' +
+            '</div>' +
+            '<div class="files-statusbar">' +
+                '<span class="files-status">Ready</span>' +
+                '<span class="files-hint">Drag images to Whiteboard or drop files from your computer</span>' +
+            '</div>' +
+            '<input type="file" class="files-upload-input" multiple accept="image/*" style="display:none">' +
         '</div>';
+    }
+
+    initFiles(windowEl) {
+        const filesGrid = windowEl.querySelector('.files-grid');
+        const filesEmpty = windowEl.querySelector('.files-empty');
+        const filesDropzone = windowEl.querySelector('.files-dropzone');
+        const filesContainer = windowEl.querySelector('.files-container');
+        const pathDisplay = windowEl.querySelector('.files-path');
+        const statusText = windowEl.querySelector('.files-status');
+        const uploadInput = windowEl.querySelector('.files-upload-input');
+        
+        let currentPath = '/';
+        let files = [];
+        let folders = [];
+        
+        // Default folders
+        const defaultFolders = ['Documents', 'Pictures', 'Videos'];
+        
+        // Load files from localStorage (will integrate with S3 later)
+        const loadFiles = () => {
+            const savedData = localStorage.getItem('hovercam_files_' + this.currentUser?.username);
+            if (savedData) {
+                const data = JSON.parse(savedData);
+                files = data.files || [];
+                folders = data.folders || defaultFolders.map(f => ({ name: f, path: '/' + f }));
+            } else {
+                folders = defaultFolders.map(f => ({ name: f, path: '/' + f }));
+                files = [];
+            }
+            renderFiles();
+        };
+        
+        // Save files to localStorage
+        const saveFiles = () => {
+            const data = { files, folders };
+            localStorage.setItem('hovercam_files_' + this.currentUser?.username, JSON.stringify(data));
+        };
+        
+        // Render files and folders
+        const renderFiles = () => {
+            const currentFolders = folders.filter(f => {
+                const parentPath = f.path.substring(0, f.path.lastIndexOf('/')) || '/';
+                return parentPath === currentPath;
+            });
+            
+            const currentFiles = files.filter(f => f.folder === currentPath);
+            
+            if (currentFolders.length === 0 && currentFiles.length === 0) {
+                filesGrid.innerHTML = '';
+                filesEmpty.classList.remove('hidden');
+            } else {
+                filesEmpty.classList.add('hidden');
+                
+                let html = '';
+                
+                // Render folders
+                currentFolders.forEach(folder => {
+                    html += '<div class="file-item folder-item" data-type="folder" data-path="' + folder.path + '">' +
+                        '<div class="file-icon folder-icon">' +
+                            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>' +
+                        '</div>' +
+                        '<span class="file-name">' + folder.name + '</span>' +
+                    '</div>';
+                });
+                
+                // Render files
+                currentFiles.forEach((file, index) => {
+                    const isImage = file.type && file.type.startsWith('image/');
+                    html += '<div class="file-item" data-type="file" data-index="' + index + '" draggable="' + isImage + '">' +
+                        '<div class="file-icon' + (isImage ? ' image-icon' : '') + '">' +
+                            (isImage && file.thumbnail ? 
+                                '<img src="' + file.thumbnail + '" alt="' + file.name + '">' :
+                                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+                            ) +
+                        '</div>' +
+                        '<span class="file-name">' + file.name + '</span>' +
+                    '</div>';
+                });
+                
+                filesGrid.innerHTML = html;
+                
+                // Add click handlers for folders
+                filesGrid.querySelectorAll('.folder-item').forEach(item => {
+                    item.addEventListener('dblclick', () => {
+                        currentPath = item.dataset.path;
+                        updatePath();
+                        renderFiles();
+                    });
+                });
+                
+                // Add drag handlers for image files
+                filesGrid.querySelectorAll('.file-item[draggable="true"]').forEach(item => {
+                    item.addEventListener('dragstart', (e) => {
+                        const index = parseInt(item.dataset.index);
+                        const file = currentFiles[index];
+                        if (file && file.data) {
+                            e.dataTransfer.setData('text/plain', file.data);
+                            e.dataTransfer.setData('application/hovercam-image', JSON.stringify({
+                                name: file.name,
+                                data: file.data
+                            }));
+                            item.classList.add('dragging');
+                        }
+                    });
+                    
+                    item.addEventListener('dragend', () => {
+                        item.classList.remove('dragging');
+                    });
+                });
+                
+                // Add context menu for delete
+                filesGrid.querySelectorAll('.file-item').forEach(item => {
+                    item.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        showContextMenu(e, item);
+                    });
+                });
+            }
+        };
+        
+        // Update path display
+        const updatePath = () => {
+            const parts = currentPath.split('/').filter(p => p);
+            let html = '<span class="path-segment" data-path="/">My Files</span>';
+            let buildPath = '';
+            parts.forEach(part => {
+                buildPath += '/' + part;
+                html += '<span class="path-sep">/</span><span class="path-segment" data-path="' + buildPath + '">' + part + '</span>';
+            });
+            pathDisplay.innerHTML = html;
+            
+            // Add click handlers
+            pathDisplay.querySelectorAll('.path-segment').forEach(seg => {
+                seg.addEventListener('click', () => {
+                    currentPath = seg.dataset.path;
+                    updatePath();
+                    renderFiles();
+                });
+            });
+        };
+        
+        // Context menu
+        const showContextMenu = (e, item) => {
+            // Remove existing menu
+            const existingMenu = document.querySelector('.files-context-menu');
+            if (existingMenu) existingMenu.remove();
+            
+            const menu = document.createElement('div');
+            menu.className = 'files-context-menu';
+            menu.innerHTML = '<button data-action="delete">Delete</button>';
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = e.clientY + 'px';
+            document.body.appendChild(menu);
+            
+            menu.querySelector('[data-action="delete"]').addEventListener('click', () => {
+                if (item.dataset.type === 'folder') {
+                    const path = item.dataset.path;
+                    folders = folders.filter(f => !f.path.startsWith(path));
+                    files = files.filter(f => !f.folder.startsWith(path));
+                } else {
+                    const index = parseInt(item.dataset.index);
+                    const currentFiles = files.filter(f => f.folder === currentPath);
+                    const fileToDelete = currentFiles[index];
+                    files = files.filter(f => f !== fileToDelete);
+                }
+                saveFiles();
+                renderFiles();
+                menu.remove();
+            });
+            
+            // Close menu on click outside
+            setTimeout(() => {
+                document.addEventListener('click', function closeMenu() {
+                    menu.remove();
+                    document.removeEventListener('click', closeMenu);
+                });
+            }, 10);
+        };
+        
+        // Create new folder
+        const createFolder = () => {
+            const name = prompt('Enter folder name:');
+            if (name && name.trim()) {
+                const folderPath = currentPath === '/' ? '/' + name.trim() : currentPath + '/' + name.trim();
+                if (!folders.find(f => f.path === folderPath)) {
+                    folders.push({ name: name.trim(), path: folderPath });
+                    saveFiles();
+                    renderFiles();
+                    statusText.textContent = 'Folder created: ' + name.trim();
+                } else {
+                    statusText.textContent = 'Folder already exists';
+                }
+            }
+        };
+        
+        // Handle file upload
+        const handleFiles = (fileList) => {
+            Array.from(fileList).forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const newFile = {
+                            name: file.name,
+                            type: file.type,
+                            size: file.size,
+                            data: e.target.result,
+                            thumbnail: e.target.result,
+                            folder: currentPath,
+                            uploaded: Date.now()
+                        };
+                        files.push(newFile);
+                        saveFiles();
+                        renderFiles();
+                        statusText.textContent = 'Uploaded: ' + file.name;
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    statusText.textContent = 'Only image files are supported';
+                }
+            });
+        };
+        
+        // Drag and drop handlers
+        filesContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            filesDropzone.classList.add('active');
+        });
+        
+        filesContainer.addEventListener('dragleave', (e) => {
+            if (!filesContainer.contains(e.relatedTarget)) {
+                filesDropzone.classList.remove('active');
+            }
+        });
+        
+        filesContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            filesDropzone.classList.remove('active');
+            
+            if (e.dataTransfer.files.length > 0) {
+                handleFiles(e.dataTransfer.files);
+            }
+        });
+        
+        // Upload button
+        windowEl.querySelector('[data-action="upload"]').addEventListener('click', () => {
+            uploadInput.click();
+        });
+        
+        uploadInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFiles(e.target.files);
+                e.target.value = '';
+            }
+        });
+        
+        // New folder button
+        windowEl.querySelector('[data-action="newfolder"]').addEventListener('click', createFolder);
+        
+        // Navigation buttons
+        windowEl.querySelector('[data-action="back"]').addEventListener('click', () => {
+            if (currentPath !== '/') {
+                currentPath = currentPath.substring(0, currentPath.lastIndexOf('/')) || '/';
+                updatePath();
+                renderFiles();
+            }
+        });
+        
+        windowEl.querySelector('[data-action="home"]').addEventListener('click', () => {
+            currentPath = '/';
+            updatePath();
+            renderFiles();
+        });
+        
+        // Initial load
+        loadFiles();
+        updatePath();
     }
 
     renderTerminalApp() {
