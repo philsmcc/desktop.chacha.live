@@ -1498,20 +1498,53 @@ class DesktopOS {
 
 
         // Resize canvas to fit container
-        // Initialize fixed-size canvas
+        // The "virtual" canvas is large (4000x3000), but we render to a display canvas
+        // that fills the container. We track viewX, viewY, zoom to determine what part
+        // of the virtual canvas to show.
+        
+        // Off-screen canvas holds the full drawing
+        const virtualCanvas = document.createElement('canvas');
+        virtualCanvas.width = CANVAS_WIDTH;
+        virtualCanvas.height = CANVAS_HEIGHT;
+        const virtualCtx = virtualCanvas.getContext('2d');
+        virtualCtx.lineCap = 'round';
+        virtualCtx.lineJoin = 'round';
+        virtualCtx.fillStyle = state.bgColor;
+        virtualCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        
+        // Initialize display canvas to fill container
         const initCanvas = () => {
-            canvas.width = CANVAS_WIDTH;
-            canvas.height = CANVAS_HEIGHT;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.fillStyle = state.bgColor;
-            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            const w = container.offsetWidth || 800;
+            const h = container.offsetHeight || 600;
+            canvas.width = w;
+            canvas.height = h;
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            renderViewport();
         };
         
-        // Update viewport transform
+        // Render the visible portion of virtual canvas to display canvas
+        const renderViewport = () => {
+            const w = canvas.width;
+            const h = canvas.height;
+            
+            // Clear and draw the visible portion
+            ctx.fillStyle = '#e0e0e0'; // gray for areas outside virtual canvas
+            ctx.fillRect(0, 0, w, h);
+            
+            // Calculate source rectangle from virtual canvas
+            const srcX = state.viewX / state.zoom;
+            const srcY = state.viewY / state.zoom;
+            const srcW = w / state.zoom;
+            const srcH = h / state.zoom;
+            
+            // Draw the portion of virtual canvas
+            ctx.drawImage(virtualCanvas, srcX, srcY, srcW, srcH, 0, 0, w, h);
+        };
+        
+        // Update viewport (just re-render)
         const updateViewport = () => {
-            canvas.style.transform = `translate(${-state.viewX}px, ${-state.viewY}px) scale(${state.zoom})`;
-            canvas.style.transformOrigin = '0 0';
+            renderViewport();
         };
         
         // Convert screen coords to canvas coords
@@ -1683,7 +1716,7 @@ class DesktopOS {
         const saveState = () => {
             state.historyIndex++;
             state.history = state.history.slice(0, state.historyIndex);
-            state.history.push(canvas.toDataURL());
+            state.history.push(virtualCanvas.toDataURL());
             if (state.history.length > 50) {
                 state.history.shift();
                 state.historyIndex--;
@@ -1695,7 +1728,7 @@ class DesktopOS {
         // Persist canvas to localStorage
         const persistCanvas = () => {
             try {
-                const canvasData = canvas.toDataURL('image/png');
+                const canvasData = virtualCanvas.toDataURL('image/png');
                 localStorage.setItem('hovercam_whiteboard_canvas', canvasData);
                 localStorage.setItem('hovercam_whiteboard_bgColor', state.bgColor);
             } catch(e) {
@@ -1711,19 +1744,21 @@ class DesktopOS {
                 
                 if (savedBgColor) {
                     state.bgColor = savedBgColor;
+                    virtualCtx.fillStyle = state.bgColor;
                 }
                 
                 if (savedCanvas) {
                     const img = new Image();
                     img.onload = () => {
                         // Fill with background first
-                        ctx.fillStyle = state.bgColor;
-                        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                        virtualCtx.fillStyle = state.bgColor;
+                        virtualCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                         // Draw saved content (may be smaller than new canvas)
-                        ctx.drawImage(img, 0, 0);
+                        virtualCtx.drawImage(img, 0, 0);
                         // Save to history after loading
-                        state.history = [canvas.toDataURL()];
+                        state.history = [virtualCanvas.toDataURL()];
                         state.historyIndex = 0;
+                        renderViewport();
                     };
                     img.src = savedCanvas;
                     return true;
@@ -1742,17 +1777,17 @@ class DesktopOS {
             if (index < 0 || index >= state.history.length) return;
             const img = new Image();
             img.onload = () => {
-                ctx.fillStyle = state.bgColor;
-                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-                ctx.drawImage(img, 0, 0);
+                virtualCtx.fillStyle = state.bgColor;
+                virtualCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                virtualCtx.drawImage(img, 0, 0);
+                renderViewport();
             };
             img.src = state.history[index];
         };
 
-        // Get coordinates from event (accounts for viewport pan/zoom)
+        // Get coordinates from event - convert screen to virtual canvas coords
         const getCoords = (e) => {
-            // Use canvas bounding rect - it reflects the CSS transform
-            const canvasRect = canvas.getBoundingClientRect();
+            const rect = canvas.getBoundingClientRect();
             let clientX, clientY;
             
             if (e.touches && e.touches.length > 0) {
@@ -1763,15 +1798,14 @@ class DesktopOS {
                 clientY = e.clientY;
             }
             
-            // The canvas rect already accounts for scale, so we need to 
-            // convert from screen space to canvas space
-            // canvasRect.width = CANVAS_WIDTH * zoom, canvasRect.height = CANVAS_HEIGHT * zoom
-            const scaleX = CANVAS_WIDTH / canvasRect.width;
-            const scaleY = CANVAS_HEIGHT / canvasRect.height;
+            // Convert screen position to virtual canvas position
+            const screenX = clientX - rect.left;
+            const screenY = clientY - rect.top;
             
+            // Account for viewport offset and zoom
             return {
-                x: (clientX - canvasRect.left) * scaleX,
-                y: (clientY - canvasRect.top) * scaleY
+                x: (screenX / state.zoom) + (state.viewX / state.zoom),
+                y: (screenY / state.zoom) + (state.viewY / state.zoom)
             };
         };
 
@@ -1802,14 +1836,16 @@ class DesktopOS {
             state.lastX = coords.x;
             state.lastY = coords.y;
             
-            ctx.beginPath();
-            ctx.arc(coords.x, coords.y, state.size / 2, 0, Math.PI * 2);
-            ctx.fillStyle = state.tool === 'eraser' ? state.bgColor : state.color;
+            // Draw on virtual canvas
+            virtualCtx.beginPath();
+            virtualCtx.arc(coords.x, coords.y, state.size / 2, 0, Math.PI * 2);
+            virtualCtx.fillStyle = state.tool === 'eraser' ? state.bgColor : state.color;
             if (state.tool === 'highlighter') {
-                ctx.globalAlpha = 0.3;
+                virtualCtx.globalAlpha = 0.3;
             }
-            ctx.fill();
-            ctx.globalAlpha = 1;
+            virtualCtx.fill();
+            virtualCtx.globalAlpha = 1;
+            renderViewport();
         };
 
         // Draw
@@ -1840,26 +1876,28 @@ class DesktopOS {
             
             const coords = getCoords(e);
             
-            ctx.beginPath();
-            ctx.moveTo(state.lastX, state.lastY);
-            ctx.lineTo(coords.x, coords.y);
+            // Draw on virtual canvas
+            virtualCtx.beginPath();
+            virtualCtx.moveTo(state.lastX, state.lastY);
+            virtualCtx.lineTo(coords.x, coords.y);
             
             if (state.tool === 'eraser') {
-                ctx.strokeStyle = state.bgColor;
-                ctx.lineWidth = state.size * 3;
-                ctx.globalAlpha = 1;
+                virtualCtx.strokeStyle = state.bgColor;
+                virtualCtx.lineWidth = state.size * 3;
+                virtualCtx.globalAlpha = 1;
             } else if (state.tool === 'highlighter') {
-                ctx.strokeStyle = state.color;
-                ctx.lineWidth = state.size * 2;
-                ctx.globalAlpha = 0.3;
+                virtualCtx.strokeStyle = state.color;
+                virtualCtx.lineWidth = state.size * 2;
+                virtualCtx.globalAlpha = 0.3;
             } else {
-                ctx.strokeStyle = state.color;
-                ctx.lineWidth = state.size;
-                ctx.globalAlpha = 1;
+                virtualCtx.strokeStyle = state.color;
+                virtualCtx.lineWidth = state.size;
+                virtualCtx.globalAlpha = 1;
             }
             
-            ctx.stroke();
-            ctx.globalAlpha = 1;
+            virtualCtx.stroke();
+            virtualCtx.globalAlpha = 1;
+            renderViewport();
             
             state.lastX = coords.x;
             state.lastY = coords.y;
@@ -2243,7 +2281,11 @@ class DesktopOS {
         // Load persisted objects
         loadObjectsState();
 
-        // No resize observer needed - canvas is fixed size
+        // Resize observer to update display canvas when container resizes
+        const resizeObserver = new ResizeObserver(() => {
+            initCanvas();
+        });
+        resizeObserver.observe(container);
 
         // Keyboard shortcuts
         windowEl.addEventListener('keydown', (e) => {
