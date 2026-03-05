@@ -1,0 +1,1149 @@
+/* Additional App-Specific Styles */
+
+/* ==================== DRAGGABLE DESKTOP ICONS ==================== */
+#desktop-icons {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.desktop-icon {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+    text-decoration: none;
+    user-select: none;
+    width: 90px;
+}
+
+.desktop-icon:hover {
+    background: var(--icon-hover-bg);
+}
+
+.desktop-icon.selected {
+    background: rgba(245, 124, 0, 0.2);
+}
+
+.desktop-icon.dragging {
+    cursor: grabbing;
+    transform: scale(1.05);
+    background: rgba(245, 124, 0, 0.15);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    z-index: 1000 !important;
+    transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.desktop-icon-img {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-card);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    transition: background 0.3s ease, border-color 0.3s ease, transform 0.2s;
+}
+
+.desktop-icon:hover .desktop-icon-img {
+    transform: scale(1.05);
+    border-color: var(--primary-color);
+}
+
+.desktop-icon.dragging .desktop-icon-img {
+    transform: scale(1.1);
+    border-color: var(--primary-color);
+    background: var(--bg-card-hover);
+}
+
+.desktop-icon-img svg {
+    width: 26px;
+    height: 26px;
+    stroke: var(--primary-color);
+}
+
+.desktop-icon-label {
+    font-size: 12px;
+    color: var(--text-primary);
+    text-align: center;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Light mode: remove text shadow on desktop icons */
+body.light-mode .desktop-icon-label {
+    text-shadow: none;
+}
+
+body.dark-mode .desktop-icon-label {
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* ==================== TOPBAR FULLSCREEN BUTTON ==================== */
+.topbar-fullscreen-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: var(--transition);
+    margin-left: 8px;
+}
+
+.topbar-fullscreen-btn:hover {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.topbar-fullscreen-btn svg {
+    width: 16px;
+    height: 16px;
+    stroke: var(--text-secondary);
+    transition: var(--transition);
+}
+
+.topbar-fullscreen-btn:hover svg {
+    stroke: white;
+}
+
+/* ==================== SETTINGS CATEGORIES ==================== */
+.settings-category {
+    margin-bottom: 8px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.category-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: background 0.2s;
+    user-select: none;
+}
+
+.category-header:hover {
+    background: var(--bg-card-hover);
+}
+
+.category-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.category-header-left svg {
+    width: 20px;
+    height: 20px;
+    stroke: var(--primary-color);
+}
+
+.category-header-left span {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.category-chevron {
+    width: 18px;
+    height: 18px;
+    stroke: var(--text-muted);
+    transition: transform 0.3s ease;
+}
+
+.settings-category.collapsed .category-chevron {
+    transform: rotate(-90deg);
+}
+
+.category-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    padding: 0 16px;
+}
+
+.category-content.expanded {
+    max-height: 1000px;
+    padding: 0 16px 16px 16px;
+}
+
+/* Files App */
+.files-app {
+    color: var(--text-secondary);
+}
+
+.files-toolbar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.files-btn {
+    padding: 8px 16px;
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.files-btn:hover {
+    background: var(--bg-card-hover);
+}
+
+.files-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 16px;
+}
+
+.folder-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.folder-item:hover {
+    background: var(--bg-card-hover);
+}
+
+.folder-item svg {
+    width: 40px;
+    height: 40px;
+}
+
+.folder-item span {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+/* Terminal App */
+.terminal-app {
+    background: var(--terminal-bg);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-size: 13px;
+    height: 100%;
+    overflow: auto;
+}
+
+.terminal-line {
+    margin-bottom: 4px;
+}
+
+.term-user {
+    color: #58a6ff;
+}
+
+.term-path {
+    color: #8b949e;
+}
+
+.term-cmd {
+    color: #c9d1d9;
+}
+
+.terminal-ascii {
+    color: #8b949e;
+    margin: 12px 0;
+    font-size: 10px;
+    line-height: 1.2;
+}
+
+.terminal-info {
+    color: #c9d1d9;
+    margin-bottom: 8px;
+}
+
+.terminal-hint {
+    color: #8b949e;
+    margin-bottom: 16px;
+}
+
+.term-cursor {
+    color: #7ee787;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+/* Settings App */
+.settings-app {
+    max-width: 550px;
+}
+
+.settings-app h3 {
+    margin-bottom: 24px;
+    color: var(--text-primary);
+}
+
+.settings-section {
+    margin-bottom: 24px;
+}
+
+.settings-section label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.settings-card {
+    padding: 16px;
+    background: var(--bg-darker);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.user-avatar {
+    width: 48px;
+    height: 48px;
+    background: var(--primary-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 600;
+    color: white;
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.user-name {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.user-role {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.settings-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+}
+
+.settings-row:not(:last-child) {
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 8px;
+    padding-bottom: 16px;
+}
+
+.toggle {
+    width: 48px;
+    height: 24px;
+    background: var(--border-color);
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.toggle.active {
+    background: var(--primary-color);
+}
+
+.toggle-knob {
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s;
+}
+
+.toggle.active .toggle-knob {
+    transform: translateX(24px);
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    font-size: 13px;
+}
+
+.info-row:not(:last-child) {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.info-row span:first-child {
+    color: var(--text-muted);
+}
+
+.info-row span:last-child {
+    color: var(--text-primary);
+}
+
+/* Settings Row with Icon */
+.settings-row-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.settings-icon {
+    width: 20px;
+    height: 20px;
+    stroke: var(--text-secondary);
+}
+
+/* Fullscreen Button */
+.fullscreen-btn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.fullscreen-btn:hover {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.fullscreen-btn svg {
+    width: 20px;
+    height: 20px;
+    stroke: var(--text-secondary);
+    transition: var(--transition);
+}
+
+.fullscreen-btn:hover svg {
+    stroke: white;
+}
+
+/* ==================== WALLPAPER SETTINGS ==================== */
+.wallpaper-section {
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.wallpaper-section:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.wallpaper-section h4 {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+/* Gradient Grid */
+.gradient-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.gradient-option {
+    aspect-ratio: 16 / 10;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 2px solid transparent;
+}
+
+.gradient-option:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.gradient-option.selected {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(245, 124, 0, 0.3);
+}
+
+/* Color Picker */
+.color-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.color-picker-row input[type="color"] {
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    cursor: pointer;
+    background: transparent;
+}
+
+.color-picker-row input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 4px;
+}
+
+.color-picker-row input[type="color"]::-webkit-color-swatch {
+    border-radius: 6px;
+    border: none;
+}
+
+.color-picker-row span {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+/* Upload Button */
+.upload-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--bg-card);
+    border: 2px dashed var(--border-color);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--transition);
+    width: 100%;
+    justify-content: center;
+}
+
+.upload-btn:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    background: rgba(245, 124, 0, 0.05);
+}
+
+.upload-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* User Wallpapers Grid */
+.user-wallpapers-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.wallpaper-thumb {
+    aspect-ratio: 16 / 10;
+    background-size: cover;
+    background-position: center;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 2px solid transparent;
+}
+
+.wallpaper-thumb:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.wallpaper-thumb.selected {
+    border-color: var(--primary-color);
+}
+
+.no-wallpapers {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 20px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* System Wallpapers Grid */
+.system-wallpapers-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.system-wallpaper {
+    aspect-ratio: 16 / 10;
+    background-size: cover;
+    background-position: center;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 2px solid transparent;
+}
+
+.system-wallpaper:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.system-wallpaper.selected {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(245, 124, 0, 0.3);
+}
+
+/* ==================== LOADING AND NOTIFICATIONS ==================== */
+.loading-spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.notification {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    z-index: 10000;
+    animation: slideInRight 0.3s ease-out;
+}
+
+.notification.success {
+    border-color: #4caf50;
+}
+
+.notification.error {
+    border-color: #ff4757;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* ==================== WHITEBOARD APP ==================== */
+.whiteboard-app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #f5f5f5;
+    margin: -20px;
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+    position: relative;
+}
+
+.window.maximized .whiteboard-app {
+    border-radius: 0;
+}
+
+/* Canvas container */
+.wb-canvas-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.wb-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+/* ==================== FLOATING TOOLBAR ==================== */
+.wb-floating-toolbar {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    background: rgba(30, 30, 40, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 50px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    z-index: 100;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Toolbar item wrapper */
+.wb-toolbar-item {
+    position: relative;
+}
+
+/* Main buttons */
+.wb-main-btn {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.wb-main-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+}
+
+.wb-main-btn:active {
+    transform: scale(0.95);
+}
+
+.wb-toolbar-item.open .wb-main-btn {
+    background: var(--primary-color);
+}
+
+.wb-main-btn svg {
+    width: 22px;
+    height: 22px;
+    stroke: #ffffff;
+    fill: none;
+    stroke-width: 2;
+}
+
+/* Color preview button */
+.wb-color-main {
+    padding: 4px;
+}
+
+.wb-color-preview {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    transition: all 0.2s ease;
+}
+
+.wb-toolbar-item.open .wb-color-preview {
+    border-color: rgba(255, 255, 255, 0.8);
+}
+
+/* Size preview button */
+.wb-size-main {
+    padding: 4px;
+}
+
+.wb-size-preview {
+    width: 10px;
+    height: 10px;
+    background: #ffffff;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+/* ==================== SLIDEOUT MENUS ==================== */
+.wb-slideout {
+    position: absolute;
+    bottom: calc(100% + 12px);
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(30, 30, 40, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+}
+
+.wb-toolbar-item.open .wb-slideout {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+}
+
+/* Arrow pointing down */
+.wb-slideout::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid rgba(30, 30, 40, 0.95);
+}
+
+/* Tool slideout buttons */
+.wb-slideout-btn {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.wb-slideout-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.wb-slideout-btn.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.wb-slideout-btn svg {
+    width: 24px;
+    height: 24px;
+    stroke: #ffffff;
+    stroke-width: 2;
+}
+
+/* Color slideout */
+.wb-slideout-colors {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    padding: 12px;
+}
+
+.wb-color-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.wb-color-btn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.wb-color-btn.active {
+    border-color: #ffffff;
+    transform: scale(1.1);
+    box-shadow: 0 0 0 2px var(--primary-color), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* White color button needs border */
+.wb-color-btn[data-color="#ffffff"] {
+    border: 3px solid rgba(200, 200, 200, 0.5);
+}
+
+.wb-color-btn[data-color="#ffffff"].active {
+    border-color: var(--primary-color);
+}
+
+/* Size slideout */
+.wb-slideout-sizes {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+.wb-size-btn {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.wb-size-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.wb-size-btn.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.wb-size-dot {
+    background: #ffffff;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+/* Divider */
+.wb-divider {
+    width: 1px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.2);
+    margin: 0 4px;
+}
+
+/* ==================== ACTION BUTTONS ==================== */
+.wb-action-btn {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.wb-action-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+}
+
+.wb-action-btn:active {
+    transform: scale(0.95);
+}
+
+.wb-action-btn.active {
+    background: var(--primary-color);
+}
+
+.wb-action-btn svg {
+    width: 20px;
+    height: 20px;
+    stroke: #ffffff;
+    stroke-width: 2;
+}
+
+/* Eraser button when active */
+.wb-eraser-btn.active {
+    background: #e53935;
+}
+
+/* Clear button hover - red tint */
+.wb-clear-btn:hover {
+    background: rgba(229, 57, 53, 0.3);
+}
+
+.wb-clear-btn:hover svg {
+    stroke: #ff6b6b;
+}
+
+/* ==================== RESPONSIVE - TOUCH PANELS ==================== */
+@media (min-width: 1920px) {
+    .wb-floating-toolbar {
+        padding: 12px 18px;
+        gap: 8px;
+    }
+    
+    .wb-main-btn,
+    .wb-action-btn {
+        width: 52px;
+        height: 52px;
+    }
+    
+    .wb-main-btn svg,
+    .wb-action-btn svg {
+        width: 26px;
+        height: 26px;
+    }
+    
+    .wb-color-preview {
+        width: 34px;
+        height: 34px;
+    }
+    
+    .wb-slideout-btn {
+        width: 56px;
+        height: 56px;
+    }
+    
+    .wb-slideout-btn svg {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .wb-color-btn {
+        width: 44px;
+        height: 44px;
+    }
+    
+    .wb-size-btn {
+        width: 52px;
+        height: 52px;
+    }
+}
+
+/* 4K Touch Panel Optimizations */
+@media (min-width: 3000px) {
+    .wb-floating-toolbar {
+        padding: 16px 24px;
+        gap: 12px;
+        border-radius: 60px;
+        bottom: 40px;
+    }
+    
+    .wb-main-btn,
+    .wb-action-btn {
+        width: 68px;
+        height: 68px;
+    }
+    
+    .wb-main-btn svg,
+    .wb-action-btn svg {
+        width: 34px;
+        height: 34px;
+    }
+    
+    .wb-color-preview {
+        width: 44px;
+        height: 44px;
+        border-width: 4px;
+    }
+    
+    .wb-size-preview {
+        width: 14px;
+        height: 14px;
+    }
+    
+    .wb-slideout {
+        gap: 12px;
+        padding: 16px;
+        border-radius: 24px;
+        bottom: calc(100% + 20px);
+    }
+    
+    .wb-slideout-btn {
+        width: 72px;
+        height: 72px;
+        border-radius: 16px;
+    }
+    
+    .wb-slideout-btn svg {
+        width: 36px;
+        height: 36px;
+    }
+    
+    .wb-slideout-colors {
+        gap: 12px;
+        padding: 16px;
+    }
+    
+    .wb-color-btn {
+        width: 56px;
+        height: 56px;
+        border-width: 4px;
+    }
+    
+    .wb-size-btn {
+        width: 68px;
+        height: 68px;
+        border-radius: 16px;
+    }
+    
+    .wb-divider {
+        height: 40px;
+        margin: 0 8px;
+    }
+}
+
+/* ==================== MAXIMIZED WINDOW STYLES ==================== */
+.window.maximized {
+    position: fixed !important;
+    top: var(--topbar-height) !important;
+    left: var(--taskbar-width) !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    border-radius: 0;
+    z-index: 9000 !important;
+}
+
+.window.maximized .window-header {
+    display: none;
+}
+
+.window.maximized .window-content {
+    border-radius: 0;
+    height: 100%;
+}
+
+.window.maximized .window-resize {
+    display: none;
+}

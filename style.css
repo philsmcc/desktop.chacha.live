@@ -1,0 +1,700 @@
+/* CSS Variables - Dark Mode (Default) */
+:root {
+    --primary-color: #f57c00;
+    --primary-dark: #e65100;
+    --primary-light: #ffb74d;
+    --bg-dark: #1a1a2e;
+    --bg-darker: #0f0f1a;
+    --bg-card: #16213e;
+    --bg-card-hover: #1f3460;
+    --text-primary: #ffffff;
+    --text-secondary: #a0a0b0;
+    --text-muted: #6b6b80;
+    --border-color: #2a2a4a;
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.4);
+    --taskbar-width: 70px;
+    --topbar-height: 40px;
+    --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --login-bg: rgba(22, 33, 62, 0.8);
+    --login-gradient: linear-gradient(135deg, var(--bg-darker) 0%, var(--bg-dark) 50%, #1a1a3e 100%);
+    --desktop-gradient-1: rgba(245, 124, 0, 0.05);
+    --desktop-gradient-2: rgba(245, 124, 0, 0.03);
+    --icon-hover-bg: rgba(255, 255, 255, 0.05);
+    --terminal-bg: #0d1117;
+}
+
+/* Light Mode Theme */
+body.light-mode {
+    --bg-dark: #e8e8f0;
+    --bg-darker: #f5f5fa;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f0f0f5;
+    --text-primary: #1a1a2e;
+    --text-secondary: #5a5a70;
+    --text-muted: #8a8aa0;
+    --border-color: #d0d0e0;
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.15);
+    --login-bg: rgba(255, 255, 255, 0.9);
+    --login-gradient: linear-gradient(135deg, #f5f5fa 0%, #e8e8f0 50%, #e0e0f0 100%);
+    --desktop-gradient-1: rgba(245, 124, 0, 0.08);
+    --desktop-gradient-2: rgba(245, 124, 0, 0.05);
+    --icon-hover-bg: rgba(0, 0, 0, 0.05);
+    --terminal-bg: #1e1e2e;
+}
+
+/* Reset */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg-darker);
+    color: var(--text-primary);
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* ==================== LOGIN SCREEN ==================== */
+.login-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.login-background {
+    position: absolute;
+    inset: 0;
+    background: var(--login-gradient);
+    z-index: -1;
+    transition: background 0.3s ease;
+}
+
+.login-background::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: 
+        radial-gradient(ellipse at 20% 80%, rgba(245, 124, 0, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(245, 124, 0, 0.1) 0%, transparent 50%);
+}
+
+.login-container {
+    width: 100%;
+    max-width: 420px;
+    padding: 48px 40px;
+    background: var(--login-bg);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: 24px;
+    box-shadow: var(--shadow-lg);
+    animation: fadeInUp 0.6s ease-out;
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.login-logo {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.login-logo img {
+    height: 60px;
+    width: auto;
+    filter: drop-shadow(0 4px 12px rgba(245, 124, 0, 0.3));
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-group label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.form-group input {
+    padding: 14px 18px;
+    background: var(--bg-darker);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-primary);
+    font-size: 15px;
+    transition: var(--transition);
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 4px rgba(245, 124, 0, 0.15);
+}
+
+.form-group input::placeholder {
+    color: var(--text-muted);
+}
+
+.login-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px 24px;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    margin-top: 8px;
+}
+
+.login-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(245, 124, 0, 0.4);
+}
+
+.login-btn:active {
+    transform: translateY(0);
+}
+
+.login-btn svg {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.3s ease;
+}
+
+.login-btn:hover svg {
+    transform: translateX(4px);
+}
+
+.login-error {
+    color: #ff6b6b;
+    font-size: 14px;
+    text-align: center;
+    min-height: 20px;
+}
+
+.login-footer {
+    text-align: center;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* ==================== DESKTOP ==================== */
+.desktop {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    background: var(--bg-darker);
+    transition: background 0.3s ease;
+}
+
+/* Taskbar (Left Side) */
+.taskbar {
+    width: var(--taskbar-width);
+    height: 100%;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 16px 0;
+    z-index: 1000;
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.taskbar-top {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.taskbar-logo {
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.taskbar-logo img {
+    width: 40px;
+    height: auto;
+}
+
+.taskbar-apps {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+.taskbar-app {
+    width: 54px;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+}
+
+.taskbar-app:hover {
+    background: var(--bg-card-hover);
+}
+
+.taskbar-app.active {
+    background: rgba(245, 124, 0, 0.2);
+}
+
+.taskbar-app.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 24px;
+    background: var(--primary-color);
+    border-radius: 0 4px 4px 0;
+}
+
+.taskbar-app svg {
+    width: 26px;
+    height: 26px;
+    stroke: var(--text-secondary);
+    transition: var(--transition);
+}
+
+.taskbar-app:hover svg,
+.taskbar-app.active svg {
+    stroke: var(--primary-color);
+}
+
+.taskbar-app .app-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 8px;
+    height: 8px;
+    background: var(--primary-color);
+    border-radius: 50%;
+}
+
+.taskbar-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.taskbar-btn {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.taskbar-btn:hover {
+    background: var(--bg-card-hover);
+}
+
+.taskbar-btn svg {
+    width: 22px;
+    height: 22px;
+    stroke: var(--text-secondary);
+    transition: var(--transition);
+}
+
+.taskbar-btn:hover svg {
+    stroke: var(--text-primary);
+}
+
+#logout-btn:hover svg {
+    stroke: #ff6b6b;
+}
+
+/* Desktop Area */
+.desktop-area {
+    flex: 1;
+    position: relative;
+    margin-top: var(--topbar-height);
+    overflow: hidden;
+    background: 
+        radial-gradient(ellipse at 30% 70%, var(--desktop-gradient-1) 0%, transparent 50%),
+        radial-gradient(ellipse at 70% 30%, var(--desktop-gradient-2) 0%, transparent 50%),
+        var(--bg-darker);
+    transition: background 0.3s ease;
+}
+
+/* Top Bar */
+.topbar {
+    position: fixed;
+    top: 0;
+    left: var(--taskbar-width);
+    right: 0;
+    height: var(--topbar-height);
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    z-index: 999;
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.topbar-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.topbar-date,
+.topbar-time {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.topbar-time {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.topbar-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-darker);
+    border-radius: 20px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.topbar-user:hover {
+    background: var(--bg-card-hover);
+}
+
+.topbar-user svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--primary-color);
+}
+
+.topbar-user span {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Desktop Icons */
+.desktop-icons {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 24px;
+}
+
+.desktop-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: var(--transition);
+    text-decoration: none;
+}
+
+.desktop-icon:hover {
+    background: var(--icon-hover-bg);
+}
+
+.desktop-icon-img {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-card);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.desktop-icon-img svg {
+    width: 26px;
+    height: 26px;
+    stroke: var(--primary-color);
+}
+
+.desktop-icon-label {
+    font-size: 12px;
+    color: var(--text-primary);
+    text-align: center;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Light mode: remove text shadow on desktop icons */
+body.light-mode .desktop-icon-label {
+    text-shadow: none;
+}
+
+body.dark-mode .desktop-icon-label {
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* ==================== WINDOWS ==================== */
+.windows-container {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.window {
+    position: absolute;
+    min-width: 400px;
+    min-height: 300px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    pointer-events: all;
+    overflow: hidden;
+    animation: windowOpen 0.2s ease-out;
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+@keyframes windowOpen {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.window.maximized {
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0;
+}
+
+.window.minimized {
+    display: none;
+}
+
+.window-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--bg-darker);
+    border-bottom: 1px solid var(--border-color);
+    cursor: move;
+    user-select: none;
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.window-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.window-title svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--primary-color);
+}
+
+.window-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.window-control {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-card);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.window-control:hover {
+    background: var(--bg-card-hover);
+}
+
+.window-control svg {
+    width: 14px;
+    height: 14px;
+    stroke: var(--text-secondary);
+}
+
+.window-control.close:hover {
+    background: #ff4757;
+}
+
+.window-control.close:hover svg {
+    stroke: white;
+}
+
+.window-content {
+    flex: 1;
+    overflow: auto;
+    padding: 20px;
+}
+
+.window-resize {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    cursor: se-resize;
+}
+
+/* ==================== APP-SPECIFIC STYLES ==================== */
+
+/* Welcome App */
+.welcome-content {
+    text-align: center;
+    padding: 40px;
+}
+
+.welcome-content h2 {
+    font-size: 28px;
+    margin-bottom: 16px;
+    color: var(--primary-color);
+}
+
+.welcome-content p {
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.welcome-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 32px;
+}
+
+.stat-card {
+    padding: 20px;
+    background: var(--bg-darker);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.stat-card h3 {
+    font-size: 32px;
+    color: var(--primary-color);
+    margin-bottom: 8px;
+}
+
+.stat-card p {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-darker);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
