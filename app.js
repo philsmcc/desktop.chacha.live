@@ -2490,15 +2490,7 @@ class DesktopOS {
         const sourceSelect = app.querySelector('.camera-source-select');
         
         let stream = null;
-        let rotation = 90;
         let mirrored = false;
-        
-        const updateTransform = () => {
-            const transforms = [];
-            if (rotation !== 0) transforms.push(`rotate(${rotation}deg)`);
-            if (mirrored) transforms.push('scaleX(-1)');
-            app.style.transform = transforms.join(' ');
-        };
         
         const loadCameraSources = async () => {
             try {
@@ -2531,7 +2523,7 @@ class DesktopOS {
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 video.play();
-                updateTransform();
+                
             } catch (err) {
                 this.showNotification('Camera error', 'error');
             }
@@ -2542,14 +2534,15 @@ class DesktopOS {
             const ctx = canvas.getContext('2d');
             const vw = video.videoWidth, vh = video.videoHeight;
             
-            canvas.width = (rotation === 90 || rotation === 270) ? vh : vw;
-            canvas.height = (rotation === 90 || rotation === 270) ? vw : vh;
+            canvas.width = vw;
+            canvas.height = vh;
             
             ctx.save();
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.rotate(rotation * Math.PI / 180);
-            if (mirrored) ctx.scale(-1, 1);
-            ctx.drawImage(video, -vw / 2, -vh / 2);
+            if (mirrored) {
+                ctx.translate(vw, 0);
+                ctx.scale(-1, 1);
+            }
+            ctx.drawImage(video, 0, 0);
             ctx.restore();
             
             return canvas.toDataURL('image/jpeg', 0.9);
@@ -2573,13 +2566,10 @@ class DesktopOS {
             if (!btn) return;
             
             const action = btn.dataset.action;
-            if (action === 'rotate') {
-                rotation = (rotation + 90) % 360;
-                updateTransform();
-            } else if (action === 'mirror') {
+            if (action === 'mirror') {
                 mirrored = !mirrored;
                 btn.classList.toggle('active', mirrored);
-                updateTransform();
+                video.style.transform = mirrored ? 'scaleX(-1)' : '';
             } else if (action === 'snapshot') {
                 const dataUrl = captureSnapshot();
                 if (dataUrl) {
@@ -2955,7 +2945,6 @@ class DesktopOS {
                     '<select class="camera-source-select"><option>Loading...</option></select>' +
                 '</div>' +
                 '<div class="camera-option-row">' +
-                    '<button class="camera-opt-btn" data-action="rotate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg><span>Rotate</span></button>' +
                     '<button class="camera-opt-btn" data-action="mirror"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg><span>Mirror</span></button>' +
                     '<button class="camera-opt-btn" data-action="snapshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg><span>Snap</span></button>' +
                 '</div>' +
