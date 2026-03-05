@@ -1863,3 +1863,82 @@ body.dark-mode .desktop-icon-label {
     padding: 0;
     overflow: hidden;
 }
+
+/* ==================== WHITEBOARD CANVAS & VIEWPORT ==================== */
+
+/* Container clips the large canvas */
+.wb-canvas-container {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    background: #e0e0e0;
+}
+
+/* Large fixed canvas */
+.wb-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    cursor: crosshair;
+    /* Transform applied via JS for pan/zoom */
+}
+
+/* Zoom label in toolbar */
+.wb-zoom-label {
+    font-size: 11px;
+    color: rgba(0,0,0,0.6);
+    min-width: 40px;
+    text-align: center;
+    font-weight: 500;
+}
+
+body.dark-theme .wb-zoom-label {
+    color: rgba(255,255,255,0.7);
+}
+
+/* Mini-map navigator */
+.wb-minimap {
+    position: absolute;
+    bottom: 60px;
+    right: 12px;
+    width: 120px;
+    height: 90px;
+    background: rgba(255,255,255,0.95);
+    border: 1px solid rgba(0,0,0,0.2);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    overflow: hidden;
+    cursor: move;
+    z-index: 100;
+}
+
+body.dark-theme .wb-minimap {
+    background: rgba(40,40,40,0.95);
+    border-color: rgba(255,255,255,0.2);
+}
+
+.wb-minimap-viewport {
+    position: absolute;
+    border: 2px solid #2196f3;
+    background: rgba(33,150,243,0.15);
+    border-radius: 2px;
+    pointer-events: none;
+}
+
+/* Grab cursor when panning */
+.wb-canvas-container.panning {
+    cursor: grab !important;
+}
+
+.wb-canvas-container.panning .wb-canvas {
+    cursor: grab !important;
+}
+
+.wb-canvas-container.panning-active {
+    cursor: grabbing !important;
+}
+
+.wb-canvas-container.panning-active .wb-canvas {
+    cursor: grabbing !important;
+}

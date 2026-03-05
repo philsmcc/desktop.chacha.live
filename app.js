@@ -1051,6 +1051,22 @@ class DesktopOS {
                 '<button class="wb-action-btn wb-clear-btn" data-action="clear" title="Clear All">' +
                     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>' +
                 '</button>' +
+                // Navigator controls
+                '<div class="wb-divider"></div>' +
+                '<button class="wb-action-btn" data-action="zoom-out" title="Zoom Out">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></svg>' +
+                '</button>' +
+                '<span class="wb-zoom-label">100%</span>' +
+                '<button class="wb-action-btn" data-action="zoom-in" title="Zoom In">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>' +
+                '</button>' +
+                '<button class="wb-action-btn" data-action="reset-view" title="Reset View">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h6v6"/><path d="M21 21h-6v-6"/><path d="M3 9V3h6"/><path d="M21 15v6h-6"/></svg>' +
+                '</button>' +
+            '</div>' +
+            // Mini-map navigator
+            '<div class="wb-minimap">' +
+                '<div class="wb-minimap-viewport"></div>' +
             '</div>' +
         '</div>';
     }
@@ -1067,7 +1083,10 @@ class DesktopOS {
         objectLayer.className = 'wb-object-layer';
         container.appendChild(objectLayer);
         
-        // Whiteboard state
+        // Whiteboard state - fixed large canvas with viewport
+        const CANVAS_WIDTH = 4000;
+        const CANVAS_HEIGHT = 3000;
+        
         const state = {
             isDrawing: false,
             tool: 'pen',
@@ -1079,6 +1098,15 @@ class DesktopOS {
             lastX: 0,
             lastY: 0,
             activeSlideout: null,
+            // Viewport state
+            viewX: 0,
+            viewY: 0,
+            zoom: 1,
+            isPanning: false,
+            panStartX: 0,
+            panStartY: 0,
+            viewStartX: 0,
+            viewStartY: 0,
             // Object manipulation state
             objects: [],
             selectedObject: null,
@@ -1313,19 +1341,12 @@ class DesktopOS {
             state.objectStartY = obj.y;
         };
         
-        // Get coordinates from mouse or touch event
+        // Get coordinates from mouse or touch event (converted to canvas space)
         const getEventCoords = (e) => {
-            const rect = container.getBoundingClientRect();
             if (e.touches && e.touches.length > 0) {
-                return {
-                    x: e.touches[0].clientX - rect.left,
-                    y: e.touches[0].clientY - rect.top
-                };
+                return screenToCanvas(e.touches[0].clientX, e.touches[0].clientY);
             }
-            return {
-                x: e.clientX - rect.left,
-                y: e.clientY - rect.top
-            };
+            return screenToCanvas(e.clientX, e.clientY);
         };
         
         // Handle object dragging/resizing during mouse/touch move
@@ -1477,44 +1498,165 @@ class DesktopOS {
 
 
         // Resize canvas to fit container
-        let resizeTimeout;
-        const resizeCanvas = () => {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                const rect = container.getBoundingClientRect();
-                if (rect.width === 0 || rect.height === 0) return;
-                
-                const dpr = window.devicePixelRatio || 1;
-                const newW = rect.width * dpr;
-                const newH = rect.height * dpr;
-                
-                // Skip if size hasn't actually changed
-                if (canvas.width === newW && canvas.height === newH) return;
-                
-                // Create temp canvas to preserve content
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = canvas.width;
-                tempCanvas.height = canvas.height;
-                tempCanvas.getContext('2d').drawImage(canvas, 0, 0);
-                
-                canvas.width = newW;
-                canvas.height = newH;
-                canvas.style.width = rect.width + 'px';
-                canvas.style.height = rect.height + 'px';
-                
-                ctx.scale(dpr, dpr);
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                
-                ctx.fillStyle = state.bgColor;
-                ctx.fillRect(0, 0, rect.width, rect.height);
-                
-                // Restore content
-                if (tempCanvas.width > 0 && tempCanvas.height > 0) {
-                    ctx.drawImage(tempCanvas, 0, 0, tempCanvas.width / dpr, tempCanvas.height / dpr);
-                }
-            }, 50);
+        // Initialize fixed-size canvas
+        const initCanvas = () => {
+            canvas.width = CANVAS_WIDTH;
+            canvas.height = CANVAS_HEIGHT;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.fillStyle = state.bgColor;
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         };
+        
+        // Update viewport transform
+        const updateViewport = () => {
+            canvas.style.transform = `translate(${-state.viewX}px, ${-state.viewY}px) scale(${state.zoom})`;
+            canvas.style.transformOrigin = '0 0';
+        };
+        
+        // Convert screen coords to canvas coords
+        const screenToCanvas = (screenX, screenY) => {
+            const rect = container.getBoundingClientRect();
+            return {
+                x: (screenX - rect.left + state.viewX) / state.zoom,
+                y: (screenY - rect.top + state.viewY) / state.zoom
+            };
+        };
+        
+        // Zoom controls
+        const zoomIn = () => {
+            state.zoom = Math.min(state.zoom * 1.2, 3);
+            updateViewport();
+        };
+        
+        const zoomOut = () => {
+            state.zoom = Math.max(state.zoom / 1.2, 0.25);
+            updateViewport();
+        };
+        
+        const resetView = () => {
+            state.viewX = 0;
+            state.viewY = 0;
+            state.zoom = 1;
+            updateViewport();
+        };
+        
+        // Update zoom label display
+        const updateZoomLabel = () => {
+            const label = toolbar.querySelector('.wb-zoom-label');
+            if (label) {
+                label.textContent = Math.round(state.zoom * 100) + '%';
+            }
+        };
+        
+        // Update minimap viewport indicator
+        const updateMinimap = () => {
+            const minimap = windowEl.querySelector('.wb-minimap');
+            const viewport = windowEl.querySelector('.wb-minimap-viewport');
+            if (!minimap || !viewport) return;
+            
+            const containerRect = container.getBoundingClientRect();
+            const minimapW = minimap.offsetWidth;
+            const minimapH = minimap.offsetHeight;
+            
+            // Scale factors
+            const scaleX = minimapW / CANVAS_WIDTH;
+            const scaleY = minimapH / CANVAS_HEIGHT;
+            
+            // Viewport position and size in minimap
+            const viewW = (containerRect.width / state.zoom) * scaleX;
+            const viewH = (containerRect.height / state.zoom) * scaleY;
+            const viewL = state.viewX * scaleX;
+            const viewT = state.viewY * scaleY;
+            
+            viewport.style.left = viewL + 'px';
+            viewport.style.top = viewT + 'px';
+            viewport.style.width = viewW + 'px';
+            viewport.style.height = viewH + 'px';
+        };
+        
+        // Pan canvas by drag (space+drag or middle mouse)
+        let isPanning = false;
+        let panStartX = 0;
+        let panStartY = 0;
+        let viewStartX = 0;
+        let viewStartY = 0;
+        let spacePressed = false;
+        
+        // Track space key
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && document.activeElement === document.body) {
+                spacePressed = true;
+                container.classList.add('panning');
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') {
+                spacePressed = false;
+                if (!isPanning) container.classList.remove('panning');
+            }
+        });
+        
+        // Mouse wheel zoom
+        container.addEventListener('wheel', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const delta = -e.deltaY * 0.001;
+                const newZoom = Math.min(Math.max(state.zoom * (1 + delta), 0.25), 3);
+                
+                // Zoom towards cursor position
+                const rect = container.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                // Calculate new viewX/viewY to keep cursor position fixed
+                const canvasX = (mouseX + state.viewX) / state.zoom;
+                const canvasY = (mouseY + state.viewY) / state.zoom;
+                
+                state.zoom = newZoom;
+                state.viewX = canvasX * state.zoom - mouseX;
+                state.viewY = canvasY * state.zoom - mouseY;
+                
+                // Clamp view position
+                state.viewX = Math.max(0, Math.min(state.viewX, CANVAS_WIDTH * state.zoom - container.offsetWidth));
+                state.viewY = Math.max(0, Math.min(state.viewY, CANVAS_HEIGHT * state.zoom - container.offsetHeight));
+                
+                updateViewport();
+                updateZoomLabel();
+                updateMinimap();
+            }
+        }, { passive: false });
+        
+        // Minimap click/drag to pan
+        const minimap = windowEl.querySelector('.wb-minimap');
+        if (minimap) {
+            minimap.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                const rect = minimap.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                
+                // Convert to canvas position
+                const scaleX = minimap.offsetWidth / CANVAS_WIDTH;
+                const scaleY = minimap.offsetHeight / CANVAS_HEIGHT;
+                
+                const containerRect = container.getBoundingClientRect();
+                const viewW = containerRect.width / state.zoom;
+                const viewH = containerRect.height / state.zoom;
+                
+                // Center the view on clicked position
+                state.viewX = (clickX / scaleX - viewW / 2) * state.zoom;
+                state.viewY = (clickY / scaleY - viewH / 2) * state.zoom;
+                
+                // Clamp
+                state.viewX = Math.max(0, Math.min(state.viewX, CANVAS_WIDTH * state.zoom - containerRect.width));
+                state.viewY = Math.max(0, Math.min(state.viewY, CANVAS_HEIGHT * state.zoom - containerRect.height));
+                
+                updateViewport();
+                updateMinimap();
+            });
+        }
 
         // Save state to history
         const saveState = () => {
@@ -1553,13 +1695,13 @@ class DesktopOS {
                 if (savedCanvas) {
                     const img = new Image();
                     img.onload = () => {
-                        const dpr = window.devicePixelRatio || 1;
-                        ctx.setTransform(1, 0, 0, 1, 0, 0);
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        // Fill with background first
+                        ctx.fillStyle = state.bgColor;
+                        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                        // Draw saved content (may be smaller than new canvas)
                         ctx.drawImage(img, 0, 0);
-                        ctx.scale(dpr, dpr);
                         // Save to history after loading
-                        state.history = [savedCanvas];
+                        state.history = [canvas.toDataURL()];
                         state.historyIndex = 0;
                     };
                     img.src = savedCanvas;
@@ -1579,32 +1721,47 @@ class DesktopOS {
             if (index < 0 || index >= state.history.length) return;
             const img = new Image();
             img.onload = () => {
-                const dpr = window.devicePixelRatio || 1;
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = state.bgColor;
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                 ctx.drawImage(img, 0, 0);
-                ctx.scale(dpr, dpr);
             };
             img.src = state.history[index];
         };
 
-        // Get coordinates from event
+        // Get coordinates from event (accounts for viewport pan/zoom)
         const getCoords = (e) => {
-            const rect = canvas.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            let clientX, clientY;
+            
             if (e.touches && e.touches.length > 0) {
-                return {
-                    x: e.touches[0].clientX - rect.left,
-                    y: e.touches[0].clientY - rect.top
-                };
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
             }
+            
+            // Convert screen coords to canvas coords
             return {
-                x: e.clientX - rect.left,
-                y: e.clientY - rect.top
+                x: (clientX - containerRect.left + state.viewX) / state.zoom,
+                y: (clientY - containerRect.top + state.viewY) / state.zoom
             };
         };
 
         // Start drawing
         const startDrawing = (e) => {
+            // Check for panning (space+drag or middle mouse)
+            if (spacePressed || e.button === 1) {
+                e.preventDefault();
+                isPanning = true;
+                panStartX = e.clientX;
+                panStartY = e.clientY;
+                viewStartX = state.viewX;
+                viewStartY = state.viewY;
+                container.classList.add('panning-active');
+                return;
+            }
+            
             // Don't draw in select mode
             if (state.tool === 'select') {
                 // Deselect if clicking on empty canvas
@@ -1630,6 +1787,23 @@ class DesktopOS {
 
         // Draw
         const draw = (e) => {
+            // Handle panning
+            if (isPanning) {
+                e.preventDefault();
+                const dx = e.clientX - panStartX;
+                const dy = e.clientY - panStartY;
+                state.viewX = viewStartX - dx;
+                state.viewY = viewStartY - dy;
+                
+                // Clamp
+                state.viewX = Math.max(0, Math.min(state.viewX, CANVAS_WIDTH * state.zoom - container.offsetWidth));
+                state.viewY = Math.max(0, Math.min(state.viewY, CANVAS_HEIGHT * state.zoom - container.offsetHeight));
+                
+                updateViewport();
+                updateMinimap();
+                return;
+            }
+            
             // Handle object manipulation in select mode
             if (state.tool === 'select') {
                 handleObjectMove(e);
@@ -1667,6 +1841,14 @@ class DesktopOS {
 
         // Stop drawing
         const stopDrawing = () => {
+            // Stop panning
+            if (isPanning) {
+                isPanning = false;
+                container.classList.remove('panning-active');
+                if (!spacePressed) container.classList.remove('panning');
+                return;
+            }
+            
             if (state.tool === 'select') {
                 stopObjectManipulation();
                 return;
@@ -1834,6 +2016,18 @@ class DesktopOS {
                 } else if (action === 'clear') {
                     // Show in-app confirmation instead of browser confirm()
                     showClearConfirmation();
+                } else if (action === 'zoom-in') {
+                    zoomIn();
+                    updateZoomLabel();
+                    updateMinimap();
+                } else if (action === 'zoom-out') {
+                    zoomOut();
+                    updateZoomLabel();
+                    updateMinimap();
+                } else if (action === 'reset-view') {
+                    resetView();
+                    updateZoomLabel();
+                    updateMinimap();
                 }
             });
         });
@@ -2009,7 +2203,11 @@ class DesktopOS {
         updateSizePreview();
 
         // Initial setup
-        resizeCanvas();
+        initCanvas();
+        updateViewport();
+        updateZoomLabel();
+        // Delay minimap init to allow layout
+        setTimeout(updateMinimap, 100);
         
         // Try to load persisted canvas, otherwise save initial state
         if (!loadPersistedCanvas()) {
@@ -2019,11 +2217,7 @@ class DesktopOS {
         // Load persisted objects
         loadObjectsState();
 
-        // Observe resize
-        const resizeObserver = new ResizeObserver(() => {
-            resizeCanvas();
-        });
-        resizeObserver.observe(container);
+        // No resize observer needed - canvas is fixed size
 
         // Keyboard shortcuts
         windowEl.addEventListener('keydown', (e) => {
