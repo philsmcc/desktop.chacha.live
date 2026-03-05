@@ -1326,6 +1326,50 @@ class DesktopOS {
     }
 
     renderBrowserApp() {
+        const homepageHtml = `
+            <div class="browser-homepage">
+                <div class="homepage-header">
+                    <h1>Educational Resources</h1>
+                    <p>Click any resource below to explore. Images can be copied to the Whiteboard!</p>
+                </div>
+                <div class="homepage-grid">
+                    <a href="https://www.wikipedia.org" class="homepage-card" data-url="https://www.wikipedia.org">
+                        <div class="card-icon">📚</div>
+                        <h3>Wikipedia</h3>
+                        <p>The free encyclopedia with millions of articles</p>
+                    </a>
+                    <a href="https://commons.wikimedia.org" class="homepage-card" data-url="https://commons.wikimedia.org">
+                        <div class="card-icon">🖼️</div>
+                        <h3>Wikimedia Commons</h3>
+                        <p>Free images, videos, and media files</p>
+                    </a>
+                    <a href="https://simple.wikipedia.org" class="homepage-card" data-url="https://simple.wikipedia.org">
+                        <div class="card-icon">📖</div>
+                        <h3>Simple Wikipedia</h3>
+                        <p>Wikipedia in simple English for students</p>
+                    </a>
+                    <a href="https://en.wikibooks.org" class="homepage-card" data-url="https://en.wikibooks.org">
+                        <div class="card-icon">📕</div>
+                        <h3>Wikibooks</h3>
+                        <p>Free textbooks and educational materials</p>
+                    </a>
+                    <a href="https://en.wikiversity.org" class="homepage-card" data-url="https://en.wikiversity.org">
+                        <div class="card-icon">🎓</div>
+                        <h3>Wikiversity</h3>
+                        <p>Free learning resources and courses</p>
+                    </a>
+                    <a href="https://species.wikimedia.org" class="homepage-card" data-url="https://species.wikimedia.org">
+                        <div class="card-icon">🦋</div>
+                        <h3>Wikispecies</h3>
+                        <p>Directory of species for biology studies</p>
+                    </a>
+                </div>
+                <div class="homepage-tip">
+                    <strong>💡 Tip:</strong> Right-click any image → "Copy Image Address" → Click the clip button above → Paste URL → Add to Whiteboard
+                </div>
+            </div>
+        `;
+        
         return '<div class="browser-app" data-app-id="browser">' +
             '<div class="browser-toolbar">' +
                 '<div class="browser-nav-buttons">' +
@@ -1338,10 +1382,13 @@ class DesktopOS {
                     '<button class="browser-nav-btn" data-action="refresh" title="Refresh">' +
                         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>' +
                     '</button>' +
+                    '<button class="browser-nav-btn browser-home-btn" data-action="home" title="Home">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>' +
+                    '</button>' +
                 '</div>' +
                 '<div class="browser-url-bar">' +
                     '<svg class="browser-url-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' +
-                    '<input type="text" class="browser-url-input" placeholder="Enter URL or search..." value="https://www.wikipedia.org">' +
+                    '<input type="text" class="browser-url-input" placeholder="Enter URL or search Wikipedia...">' +
                     '<button class="browser-go-btn" title="Go">' +
                         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
                     '</button>' +
@@ -1352,12 +1399,11 @@ class DesktopOS {
                     '</button>' +
                 '</div>' +
             '</div>' +
-            // Clip banner - shows above iframe when in clip mode
             '<div class="browser-clip-banner hidden">' +
                 '<div class="clip-banner-content">' +
                     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
                     '<span>Paste image URL to add to Whiteboard:</span>' +
-                    '<input type="text" class="clip-url-input" placeholder="https://example.com/image.jpg">' +
+                    '<input type="text" class="clip-url-input" placeholder="https://upload.wikimedia.org/...">' +
                     '<button class="clip-add-btn">Add to Whiteboard</button>' +
                     '<button class="clip-close-btn" title="Close">' +
                         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
@@ -1365,11 +1411,12 @@ class DesktopOS {
                 '</div>' +
             '</div>' +
             '<div class="browser-content">' +
-                '<iframe class="browser-iframe" src="https://www.wikipedia.org" sandbox="allow-same-origin allow-scripts allow-popups allow-forms"></iframe>' +
+                '<div class="browser-homepage-container">' + homepageHtml + '</div>' +
+                '<iframe class="browser-iframe hidden" sandbox="allow-same-origin allow-scripts allow-popups allow-forms"></iframe>' +
             '</div>' +
             '<div class="browser-status-bar">' +
-                '<span class="browser-status-text">Ready</span>' +
-                '<span class="browser-status-hint">Tip: Right-click images → Copy Image Address, then use clip button to add to Whiteboard</span>' +
+                '<span class="browser-status-text">Home</span>' +
+                '<span class="browser-status-hint">Select an educational resource to begin</span>' +
             '</div>' +
         '</div>';
     }
@@ -1377,28 +1424,66 @@ class DesktopOS {
     initBrowser(windowEl) {
         const urlInput = windowEl.querySelector('.browser-url-input');
         const iframe = windowEl.querySelector('.browser-iframe');
+        const homepageContainer = windowEl.querySelector('.browser-homepage-container');
         const goBtn = windowEl.querySelector('.browser-go-btn');
         const statusText = windowEl.querySelector('.browser-status-text');
+        const statusHint = windowEl.querySelector('.browser-status-hint');
         const clipBanner = windowEl.querySelector('.browser-clip-banner');
         const clipBtn = windowEl.querySelector('.browser-clip-btn');
         const clipUrlInput = windowEl.querySelector('.clip-url-input');
         const clipAddBtn = windowEl.querySelector('.clip-add-btn');
         const clipCloseBtn = windowEl.querySelector('.clip-close-btn');
+        
+        let isHome = true;
 
-        // Navigation
+        // Show homepage
+        const showHomepage = () => {
+            isHome = true;
+            homepageContainer.classList.remove('hidden');
+            iframe.classList.add('hidden');
+            iframe.src = 'about:blank';
+            urlInput.value = '';
+            statusText.textContent = 'Home';
+            statusHint.textContent = 'Select an educational resource to begin';
+        };
+
+        // Navigate to URL
         const navigate = (url) => {
             let finalUrl = url.trim();
+            if (!finalUrl) {
+                showHomepage();
+                return;
+            }
+            
             if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
                 if (finalUrl.includes('.') && !finalUrl.includes(' ')) {
                     finalUrl = 'https://' + finalUrl;
                 } else {
-                    finalUrl = 'https://www.google.com/search?igu=1&q=' + encodeURIComponent(finalUrl);
+                    // Search Wikipedia instead of Google
+                    finalUrl = 'https://en.wikipedia.org/w/index.php?search=' + encodeURIComponent(finalUrl);
                 }
             }
+            
+            isHome = false;
             urlInput.value = finalUrl;
+            homepageContainer.classList.add('hidden');
+            iframe.classList.remove('hidden');
             iframe.src = finalUrl;
             statusText.textContent = 'Loading...';
+            statusHint.textContent = 'Right-click images → Copy Image Address → Use clip button';
         };
+
+        // Homepage card clicks
+        homepageContainer.addEventListener('click', (e) => {
+            const card = e.target.closest('.homepage-card');
+            if (card) {
+                e.preventDefault();
+                const url = card.dataset.url;
+                if (url) {
+                    navigate(url);
+                }
+            }
+        });
 
         // URL input handlers
         urlInput.addEventListener('keypress', (e) => {
@@ -1414,26 +1499,32 @@ class DesktopOS {
             btn.addEventListener('click', () => {
                 const action = btn.dataset.action;
                 if (action === 'back') {
+                    if (isHome) return;
                     try { iframe.contentWindow.history.back(); } catch(e) {}
                 } else if (action === 'forward') {
                     try { iframe.contentWindow.history.forward(); } catch(e) {}
                 } else if (action === 'refresh') {
+                    if (isHome) return;
                     iframe.src = iframe.src;
                     statusText.textContent = 'Refreshing...';
+                } else if (action === 'home') {
+                    showHomepage();
                 }
             });
         });
 
         // Iframe load handler
         iframe.addEventListener('load', () => {
-            statusText.textContent = 'Ready';
-            try {
-                const newUrl = iframe.contentWindow.location.href;
-                if (newUrl && newUrl !== 'about:blank') {
-                    urlInput.value = newUrl;
+            if (!isHome) {
+                statusText.textContent = 'Ready';
+                try {
+                    const newUrl = iframe.contentWindow.location.href;
+                    if (newUrl && newUrl !== 'about:blank') {
+                        urlInput.value = newUrl;
+                    }
+                } catch(e) {
+                    // Cross-origin - can't access URL
                 }
-            } catch(e) {
-                // Cross-origin - can't access URL
             }
         });
 
