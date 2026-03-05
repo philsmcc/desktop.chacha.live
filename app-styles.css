@@ -1857,3 +1857,9 @@ body.dark-mode .desktop-icon-label {
 .camera-opt-btn span {
     font-size: 10px;
 }
+
+/* Camera window - no padding */
+.window-content:has(.camera-app) {
+    padding: 0;
+    overflow: hidden;
+}
