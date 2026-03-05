@@ -882,9 +882,16 @@ class DesktopOS {
             win.minimized = false;
         }
         
-        // Always bring to front with a new z-index
+        // Always bring to front with a new z-index (unless another window is always-on-top)
         this.windowZIndex++;
-        win.element.style.zIndex = this.windowZIndex;
+        win.element.style.zIndex = win.element.classList.contains('always-on-top') ? '99999' : this.windowZIndex;
+        
+        // Re-apply z-index to any always-on-top windows so they stay on top
+        this.windows.forEach((w) => {
+            if (w.element.classList.contains('always-on-top')) {
+                w.element.style.zIndex = '99999';
+            }
+        });
         
         const app = this.apps.find(a => a.id === appId);
         document.getElementById("topbar-title").textContent = app ? app.name : "Desktop";
