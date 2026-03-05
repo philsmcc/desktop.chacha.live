@@ -1260,6 +1260,161 @@ body.dark-mode .desktop-icon-label {
     stroke: #ff6b6b;
 }
 
+/* Select button styling */
+.wb-select-btn.active {
+    background: #1e88e5;
+}
+
+.wb-select-btn.active svg {
+    stroke: #ffffff;
+}
+
+/* ==================== OBJECT LAYER SYSTEM ==================== */
+.wb-object-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.wb-object {
+    position: absolute;
+    pointer-events: auto;
+    cursor: move;
+    border: 2px solid transparent;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    touch-action: none;
+}
+
+.wb-object img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.wb-object:hover {
+    border-color: rgba(30, 136, 229, 0.5);
+}
+
+.wb-object.selected {
+    border-color: #1e88e5;
+    box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.3), 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Resize handles */
+.wb-resize-handle {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: #1e88e5;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.wb-object.selected .wb-resize-handle {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.wb-handle-nw {
+    top: -7px;
+    left: -7px;
+    cursor: nw-resize;
+}
+
+.wb-handle-ne {
+    top: -7px;
+    right: -7px;
+    cursor: ne-resize;
+}
+
+.wb-handle-sw {
+    bottom: -7px;
+    left: -7px;
+    cursor: sw-resize;
+}
+
+.wb-handle-se {
+    bottom: -7px;
+    right: -7px;
+    cursor: se-resize;
+}
+
+.wb-resize-handle:hover {
+    transform: scale(1.2);
+    background: #f57c00;
+}
+
+/* Delete button for objects */
+.wb-object-delete {
+    position: absolute;
+    top: -12px;
+    right: -12px;
+    width: 24px;
+    height: 24px;
+    background: #e53935;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+}
+
+.wb-object.selected .wb-object-delete {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.wb-object-delete:hover {
+    transform: scale(1.1);
+    background: #c62828;
+}
+
+.wb-object-delete svg {
+    width: 14px;
+    height: 14px;
+    stroke: #ffffff;
+    stroke-width: 2.5;
+}
+
+/* Drag over indicator for canvas */
+.wb-canvas-container.drag-over {
+    background: rgba(30, 136, 229, 0.1);
+}
+
+.wb-canvas-container.drag-over::after {
+    content: 'Drop image here';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 16px 32px;
+    background: rgba(30, 136, 229, 0.9);
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 12px;
+    pointer-events: none;
+    z-index: 1000;
+}
+
 /* ==================== RESPONSIVE - TOUCH PANELS ==================== */
 @media (min-width: 1920px) {
     .wb-floating-toolbar {
@@ -1302,6 +1457,29 @@ body.dark-mode .desktop-icon-label {
     .wb-size-btn {
         width: 52px;
         height: 52px;
+    }
+    
+    /* Object layer responsiveness */
+    .wb-resize-handle {
+        width: 18px;
+        height: 18px;
+    }
+    
+    .wb-handle-nw { top: -9px; left: -9px; }
+    .wb-handle-ne { top: -9px; right: -9px; }
+    .wb-handle-sw { bottom: -9px; left: -9px; }
+    .wb-handle-se { bottom: -9px; right: -9px; }
+    
+    .wb-object-delete {
+        width: 30px;
+        height: 30px;
+        top: -15px;
+        right: -15px;
+    }
+    
+    .wb-object-delete svg {
+        width: 18px;
+        height: 18px;
     }
 }
 
@@ -1375,6 +1553,35 @@ body.dark-mode .desktop-icon-label {
     .wb-divider {
         height: 40px;
         margin: 0 8px;
+    }
+    
+    /* Object layer for 4K touch */
+    .wb-resize-handle {
+        width: 24px;
+        height: 24px;
+        border-width: 3px;
+    }
+    
+    .wb-handle-nw { top: -12px; left: -12px; }
+    .wb-handle-ne { top: -12px; right: -12px; }
+    .wb-handle-sw { bottom: -12px; left: -12px; }
+    .wb-handle-se { bottom: -12px; right: -12px; }
+    
+    .wb-object-delete {
+        width: 40px;
+        height: 40px;
+        top: -20px;
+        right: -20px;
+        border-width: 3px;
+    }
+    
+    .wb-object-delete svg {
+        width: 22px;
+        height: 22px;
+    }
+    
+    .wb-object.selected {
+        border-width: 3px;
     }
 }
 

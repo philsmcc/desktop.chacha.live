@@ -877,6 +877,10 @@ class DesktopOS {
                 '<canvas class="wb-canvas"></canvas>' +
             '</div>' +
             '<div class="wb-floating-toolbar">' +
+                // Select tool button (always visible)
+                '<button class="wb-action-btn wb-select-btn" data-action="select" title="Select Objects (S)">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>' +
+                '</button>' +
                 // Tool button with slide-out
                 '<div class="wb-toolbar-item" data-popup="tools">' +
                     '<button class="wb-main-btn wb-tool-main" title="Drawing Tool">' +
@@ -946,6 +950,12 @@ class DesktopOS {
         const canvas = windowEl.querySelector('.wb-canvas');
         const ctx = canvas.getContext('2d');
         const toolbar = windowEl.querySelector('.wb-floating-toolbar');
+        const self = this;
+        
+        // Create object overlay layer for manipulable objects
+        const objectLayer = document.createElement('div');
+        objectLayer.className = 'wb-object-layer';
+        container.appendChild(objectLayer);
         
         // Whiteboard state
         const state = {
@@ -958,7 +968,25 @@ class DesktopOS {
             historyIndex: -1,
             lastX: 0,
             lastY: 0,
-            activeSlideout: null
+            activeSlideout: null,
+            // Object manipulation state
+            objects: [],
+            selectedObject: null,
+            isDragging: false,
+            isResizing: false,
+            resizeHandle: null,
+            dragStartX: 0,
+            dragStartY: 0,
+            objectStartX: 0,
+            objectStartY: 0,
+            objectStartW: 0,
+            objectStartH: 0,
+            // Multi-touch state
+            touches: [],
+            initialPinchDistance: 0,
+            initialPinchCenter: null,
+            pinchStartWidth: 0,
+            pinchStartHeight: 0
         };
 
         // Close all slideouts
@@ -1004,6 +1032,339 @@ class DesktopOS {
             };
             if (iconEl) iconEl.innerHTML = icons[tool] || icons.pen;
         };
+        
+        // ==================== OBJECT LAYER SYSTEM ====================
+        
+        // Create a new image object
+        const createImageObject = (imgSrc, x, y, width, height) => {
+            const id = 'obj_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const obj = {
+                id,
+                type: 'image',
+                src: imgSrc,
+                x,
+                y,
+                width,
+                height,
+                rotation: 0
+            };
+            state.objects.push(obj);
+            renderObject(obj);
+            selectObject(obj);
+            saveObjectsState();
+            return obj;
+        };
+        
+        // Render an object to the object layer
+        const renderObject = (obj) => {
+            // Remove existing element if any
+            const existing = objectLayer.querySelector('[data-obj-id="' + obj.id + '"]');
+            if (existing) existing.remove();
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'wb-object' + (state.selectedObject?.id === obj.id ? ' selected' : '');
+            wrapper.dataset.objId = obj.id;
+            wrapper.style.cssText = 'left:' + obj.x + 'px;top:' + obj.y + 'px;width:' + obj.width + 'px;height:' + obj.height + 'px;';
+            
+            if (obj.type === 'image') {
+                const img = document.createElement('img');
+                img.src = obj.src;
+                img.draggable = false;
+                wrapper.appendChild(img);
+            }
+            
+            // Add resize handles
+            const handles = ['nw', 'ne', 'sw', 'se'];
+            handles.forEach(pos => {
+                const handle = document.createElement('div');
+                handle.className = 'wb-resize-handle wb-handle-' + pos;
+                handle.dataset.handle = pos;
+                wrapper.appendChild(handle);
+            });
+            
+            // Add delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'wb-object-delete';
+            deleteBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteObject(obj.id);
+            });
+            wrapper.appendChild(deleteBtn);
+            
+            objectLayer.appendChild(wrapper);
+            bindObjectEvents(wrapper, obj);
+        };
+        
+        // Bind events to an object element
+        const bindObjectEvents = (wrapper, obj) => {
+            // Mouse events
+            wrapper.addEventListener('mousedown', (e) => {
+                if (state.tool !== 'select') return;
+                e.stopPropagation();
+                
+                const handle = e.target.closest('.wb-resize-handle');
+                if (handle) {
+                    startResize(e, obj, handle.dataset.handle);
+                } else if (!e.target.closest('.wb-object-delete')) {
+                    selectObject(obj);
+                    startDrag(e, obj);
+                }
+            });
+            
+            // Touch events for object manipulation
+            wrapper.addEventListener('touchstart', (e) => {
+                if (state.tool !== 'select') return;
+                e.stopPropagation();
+                
+                if (e.touches.length === 1) {
+                    const handle = e.target.closest('.wb-resize-handle');
+                    if (handle) {
+                        startResize(e, obj, handle.dataset.handle);
+                    } else if (!e.target.closest('.wb-object-delete')) {
+                        selectObject(obj);
+                        startDrag(e, obj);
+                    }
+                } else if (e.touches.length === 2) {
+                    // Pinch gesture for resize
+                    selectObject(obj);
+                    startPinch(e, obj);
+                }
+            }, { passive: false });
+        };
+        
+        // Select an object
+        const selectObject = (obj) => {
+            state.selectedObject = obj;
+            objectLayer.querySelectorAll('.wb-object').forEach(el => {
+                el.classList.toggle('selected', el.dataset.objId === obj.id);
+            });
+        };
+        
+        // Deselect all objects
+        const deselectAll = () => {
+            state.selectedObject = null;
+            objectLayer.querySelectorAll('.wb-object').forEach(el => {
+                el.classList.remove('selected');
+            });
+        };
+        
+        // Delete an object
+        const deleteObject = (objId) => {
+            state.objects = state.objects.filter(o => o.id !== objId);
+            const el = objectLayer.querySelector('[data-obj-id="' + objId + '"]');
+            if (el) el.remove();
+            if (state.selectedObject?.id === objId) {
+                state.selectedObject = null;
+            }
+            saveObjectsState();
+        };
+        
+        // Start dragging an object
+        const startDrag = (e, obj) => {
+            state.isDragging = true;
+            const coords = getEventCoords(e);
+            state.dragStartX = coords.x;
+            state.dragStartY = coords.y;
+            state.objectStartX = obj.x;
+            state.objectStartY = obj.y;
+        };
+        
+        // Start resizing an object
+        const startResize = (e, obj, handle) => {
+            e.preventDefault();
+            state.isResizing = true;
+            state.resizeHandle = handle;
+            const coords = getEventCoords(e);
+            state.dragStartX = coords.x;
+            state.dragStartY = coords.y;
+            state.objectStartX = obj.x;
+            state.objectStartY = obj.y;
+            state.objectStartW = obj.width;
+            state.objectStartH = obj.height;
+        };
+        
+        // Start pinch gesture
+        const startPinch = (e, obj) => {
+            e.preventDefault();
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            state.initialPinchDistance = Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+            );
+            state.initialPinchCenter = {
+                x: (touch1.clientX + touch2.clientX) / 2,
+                y: (touch1.clientY + touch2.clientY) / 2
+            };
+            state.pinchStartWidth = obj.width;
+            state.pinchStartHeight = obj.height;
+            state.objectStartX = obj.x;
+            state.objectStartY = obj.y;
+        };
+        
+        // Get coordinates from mouse or touch event
+        const getEventCoords = (e) => {
+            const rect = container.getBoundingClientRect();
+            if (e.touches && e.touches.length > 0) {
+                return {
+                    x: e.touches[0].clientX - rect.left,
+                    y: e.touches[0].clientY - rect.top
+                };
+            }
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        };
+        
+        // Handle object dragging/resizing during mouse/touch move
+        const handleObjectMove = (e) => {
+            if (!state.selectedObject) return;
+            
+            if (state.isDragging) {
+                const coords = getEventCoords(e);
+                const dx = coords.x - state.dragStartX;
+                const dy = coords.y - state.dragStartY;
+                state.selectedObject.x = state.objectStartX + dx;
+                state.selectedObject.y = state.objectStartY + dy;
+                updateObjectPosition(state.selectedObject);
+            } else if (state.isResizing) {
+                const coords = getEventCoords(e);
+                const dx = coords.x - state.dragStartX;
+                const dy = coords.y - state.dragStartY;
+                
+                let newX = state.objectStartX;
+                let newY = state.objectStartY;
+                let newW = state.objectStartW;
+                let newH = state.objectStartH;
+                
+                const aspectRatio = state.objectStartW / state.objectStartH;
+                
+                // Resize based on handle position
+                if (state.resizeHandle.includes('e')) {
+                    newW = Math.max(50, state.objectStartW + dx);
+                    newH = newW / aspectRatio;
+                }
+                if (state.resizeHandle.includes('w')) {
+                    const widthChange = -dx;
+                    newW = Math.max(50, state.objectStartW + widthChange);
+                    newH = newW / aspectRatio;
+                    newX = state.objectStartX - (newW - state.objectStartW);
+                }
+                if (state.resizeHandle.includes('s')) {
+                    newH = Math.max(50, state.objectStartH + dy);
+                    newW = newH * aspectRatio;
+                }
+                if (state.resizeHandle.includes('n')) {
+                    const heightChange = -dy;
+                    newH = Math.max(50, state.objectStartH + heightChange);
+                    newW = newH * aspectRatio;
+                    newY = state.objectStartY - (newH - state.objectStartH);
+                }
+                
+                state.selectedObject.x = newX;
+                state.selectedObject.y = newY;
+                state.selectedObject.width = newW;
+                state.selectedObject.height = newH;
+                updateObjectPosition(state.selectedObject);
+            }
+        };
+        
+        // Handle pinch gesture for resizing
+        const handlePinch = (e) => {
+            if (!state.selectedObject || e.touches.length !== 2) return;
+            e.preventDefault();
+            
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            const currentDistance = Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+            );
+            
+            const scale = currentDistance / state.initialPinchDistance;
+            const newWidth = Math.max(50, state.pinchStartWidth * scale);
+            const newHeight = Math.max(50, state.pinchStartHeight * scale);
+            
+            // Keep object centered during pinch
+            const centerX = state.objectStartX + state.pinchStartWidth / 2;
+            const centerY = state.objectStartY + state.pinchStartHeight / 2;
+            
+            state.selectedObject.width = newWidth;
+            state.selectedObject.height = newHeight;
+            state.selectedObject.x = centerX - newWidth / 2;
+            state.selectedObject.y = centerY - newHeight / 2;
+            
+            updateObjectPosition(state.selectedObject);
+        };
+        
+        // Stop object manipulation
+        const stopObjectManipulation = () => {
+            if (state.isDragging || state.isResizing) {
+                saveObjectsState();
+            }
+            state.isDragging = false;
+            state.isResizing = false;
+            state.resizeHandle = null;
+            state.initialPinchDistance = 0;
+        };
+        
+        // Update object position in DOM
+        const updateObjectPosition = (obj) => {
+            const el = objectLayer.querySelector('[data-obj-id="' + obj.id + '"]');
+            if (el) {
+                el.style.left = obj.x + 'px';
+                el.style.top = obj.y + 'px';
+                el.style.width = obj.width + 'px';
+                el.style.height = obj.height + 'px';
+            }
+        };
+        
+        // Save objects state to localStorage
+        const saveObjectsState = () => {
+            try {
+                const objectsData = state.objects.map(obj => ({...obj}));
+                localStorage.setItem('hovercam_whiteboard_objects', JSON.stringify(objectsData));
+            } catch(e) {
+                console.warn('Could not save objects:', e);
+            }
+        };
+        
+        // Load objects from localStorage
+        const loadObjectsState = () => {
+            try {
+                const saved = localStorage.getItem('hovercam_whiteboard_objects');
+                if (saved) {
+                    const objects = JSON.parse(saved);
+                    objects.forEach(obj => {
+                        state.objects.push(obj);
+                        renderObject(obj);
+                    });
+                    return true;
+                }
+            } catch(e) {
+                console.warn('Could not load objects:', e);
+            }
+            return false;
+        };
+        
+        // Flatten all objects to canvas (for saving/exporting)
+        const flattenObjectsToCanvas = () => {
+            const dpr = window.devicePixelRatio || 1;
+            state.objects.forEach(obj => {
+                if (obj.type === 'image') {
+                    const img = new Image();
+                    img.onload = () => {
+                        ctx.drawImage(img, obj.x, obj.y, obj.width, obj.height);
+                    };
+                    img.src = obj.src;
+                }
+            });
+        };
+        
+        // ==================== END OBJECT LAYER SYSTEM ====================
+
 
         // Resize canvas to fit container
         const resizeCanvas = () => {
@@ -1118,6 +1479,12 @@ class DesktopOS {
 
         // Start drawing
         const startDrawing = (e) => {
+            // Don't draw in select mode
+            if (state.tool === 'select') {
+                // Deselect if clicking on empty canvas
+                deselectAll();
+                return;
+            }
             e.preventDefault();
             closeAllSlideouts();
             state.isDrawing = true;
@@ -1137,6 +1504,11 @@ class DesktopOS {
 
         // Draw
         const draw = (e) => {
+            // Handle object manipulation in select mode
+            if (state.tool === 'select') {
+                handleObjectMove(e);
+                return;
+            }
             if (!state.isDrawing) return;
             e.preventDefault();
             
@@ -1169,6 +1541,10 @@ class DesktopOS {
 
         // Stop drawing
         const stopDrawing = () => {
+            if (state.tool === 'select') {
+                stopObjectManipulation();
+                return;
+            }
             if (state.isDrawing) {
                 state.isDrawing = false;
                 saveState();
@@ -1181,11 +1557,47 @@ class DesktopOS {
         canvas.addEventListener('mouseup', stopDrawing);
         canvas.addEventListener('mouseleave', stopDrawing);
 
-        // Canvas events - touch
-        canvas.addEventListener('touchstart', startDrawing, { passive: false });
-        canvas.addEventListener('touchmove', draw, { passive: false });
+        // Canvas events - touch (with special handling for pinch)
+        canvas.addEventListener('touchstart', (e) => {
+            if (state.tool === 'select' && e.touches.length === 2 && state.selectedObject) {
+                startPinch(e, state.selectedObject);
+            } else {
+                startDrawing(e);
+            }
+        }, { passive: false });
+        canvas.addEventListener('touchmove', (e) => {
+            if (state.tool === 'select' && e.touches.length === 2) {
+                handlePinch(e);
+            } else {
+                draw(e);
+            }
+        }, { passive: false });
         canvas.addEventListener('touchend', stopDrawing);
         canvas.addEventListener('touchcancel', stopDrawing);
+
+        // Global mouse/touch handlers for object manipulation
+        document.addEventListener('mousemove', (e) => {
+            if (state.tool === 'select' && (state.isDragging || state.isResizing)) {
+                handleObjectMove(e);
+            }
+        });
+        document.addEventListener('mouseup', () => {
+            if (state.tool === 'select') {
+                stopObjectManipulation();
+            }
+        });
+        document.addEventListener('touchmove', (e) => {
+            if (state.tool === 'select' && e.touches.length === 2 && state.selectedObject) {
+                handlePinch(e);
+            } else if (state.tool === 'select' && (state.isDragging || state.isResizing)) {
+                handleObjectMove(e);
+            }
+        }, { passive: false });
+        document.addEventListener('touchend', () => {
+            if (state.tool === 'select') {
+                stopObjectManipulation();
+            }
+        });
 
         // Slideout triggers - main buttons
         toolbar.querySelectorAll('.wb-toolbar-item').forEach(item => {
@@ -1207,8 +1619,10 @@ class DesktopOS {
                 state.tool = btn.dataset.tool;
                 updateToolIcon(state.tool);
                 
-                // Update eraser button state
-                toolbar.querySelector('.wb-eraser-btn').classList.remove('active');
+                // Update eraser and select button states
+                toolbar.querySelector('.wb-eraser-btn')?.classList.remove('active');
+                toolbar.querySelector('.wb-select-btn')?.classList.remove('active');
+                deselectAll();
                 
                 closeAllSlideouts();
             });
@@ -1223,14 +1637,16 @@ class DesktopOS {
                 state.color = btn.dataset.color;
                 updateColorPreview();
                 
-                // Switch to pen if eraser was active
-                if (state.tool === 'eraser') {
+                // Switch to pen if eraser or select was active
+                if (state.tool === 'eraser' || state.tool === 'select') {
                     state.tool = 'pen';
                     updateToolIcon('pen');
-                    toolbar.querySelector('.wb-eraser-btn').classList.remove('active');
+                    toolbar.querySelector('.wb-eraser-btn')?.classList.remove('active');
+                    toolbar.querySelector('.wb-select-btn')?.classList.remove('active');
                     toolbar.querySelectorAll('.wb-slideout-btn[data-tool]').forEach(b => b.classList.remove('active'));
                     const penBtn = toolbar.querySelector('.wb-slideout-btn[data-tool="pen"]');
                     if (penBtn) penBtn.classList.add('active');
+                    deselectAll();
                 }
                 
                 closeAllSlideouts();
@@ -1262,6 +1678,20 @@ class DesktopOS {
                 } else if (action === 'redo' && state.historyIndex < state.history.length - 1) {
                     state.historyIndex++;
                     restoreState(state.historyIndex);
+                } else if (action === 'select') {
+                    // Toggle select mode
+                    const isSelect = state.tool === 'select';
+                    if (isSelect) {
+                        state.tool = 'pen';
+                        btn.classList.remove('active');
+                        updateToolIcon('pen');
+                        deselectAll();
+                    } else {
+                        state.tool = 'select';
+                        btn.classList.add('active');
+                        toolbar.querySelector('.wb-eraser-btn')?.classList.remove('active');
+                        toolbar.querySelectorAll('.wb-slideout-btn[data-tool]').forEach(b => b.classList.remove('active'));
+                    }
                 } else if (action === 'eraser') {
                     // Toggle eraser
                     const isEraser = state.tool === 'eraser';
@@ -1272,6 +1702,7 @@ class DesktopOS {
                     } else {
                         state.tool = 'eraser';
                         btn.classList.add('active');
+                        toolbar.querySelector('.wb-select-btn')?.classList.remove('active');
                         toolbar.querySelectorAll('.wb-slideout-btn[data-tool]').forEach(b => b.classList.remove('active'));
                     }
                 } else if (action === 'clear') {
@@ -1281,6 +1712,11 @@ class DesktopOS {
                         ctx.fillRect(0, 0, rect.width, rect.height);
                         // Clear persisted canvas
                         localStorage.removeItem('hovercam_whiteboard_canvas');
+                        // Clear objects
+                        state.objects = [];
+                        objectLayer.innerHTML = '';
+                        localStorage.removeItem('hovercam_whiteboard_objects');
+                        state.selectedObject = null;
                         // Reset history
                         state.history = [];
                         state.historyIndex = -1;
@@ -1292,6 +1728,57 @@ class DesktopOS {
 
         // Close slideouts when clicking canvas
         canvas.addEventListener('click', closeAllSlideouts);
+        
+        // Helper to add image as object
+        const addImageAsObject = (imgSrc, dropEvent) => {
+            const img = new Image();
+            img.onload = () => {
+                const containerRect = container.getBoundingClientRect();
+                const dropX = dropEvent.clientX - containerRect.left;
+                const dropY = dropEvent.clientY - containerRect.top;
+                
+                // Scale image to reasonable size (max 40% of canvas)
+                const maxWidth = containerRect.width * 0.4;
+                const maxHeight = containerRect.height * 0.4;
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > maxWidth) {
+                    height = height * (maxWidth / width);
+                    width = maxWidth;
+                }
+                if (height > maxHeight) {
+                    width = width * (maxHeight / height);
+                    height = maxHeight;
+                }
+                
+                // Center on drop point
+                const x = dropX - width / 2;
+                const y = dropY - height / 2;
+                
+                createImageObject(imgSrc, x, y, width, height);
+                
+                // Switch to select mode so user can manipulate immediately
+                state.tool = 'select';
+                toolbar.querySelector('.wb-select-btn')?.classList.add('active');
+                toolbar.querySelector('.wb-eraser-btn')?.classList.remove('active');
+                
+                self.showNotification('Image added! Drag to move, use handles to resize.', 'success');
+            };
+            img.onerror = () => {
+                // Try with CORS proxy
+                const proxyImg = new Image();
+                proxyImg.crossOrigin = 'anonymous';
+                proxyImg.onload = () => {
+                    img.onload();
+                };
+                proxyImg.onerror = () => {
+                    self.showNotification('Could not load image', 'error');
+                };
+                proxyImg.src = 'https://corsproxy.io/?' + encodeURIComponent(imgSrc);
+            };
+            img.src = imgSrc;
+        };
         
         // Drag and drop image support
         container.addEventListener('dragover', (e) => {
@@ -1315,7 +1802,7 @@ class DesktopOS {
                 if (file.type.startsWith('image/')) {
                     const reader = new FileReader();
                     reader.onload = (event) => {
-                        this.drawImageOnWhiteboard(canvas, ctx, event.target.result, e, state, saveState);
+                        addImageAsObject(event.target.result, e);
                     };
                     reader.readAsDataURL(file);
                 }
@@ -1327,7 +1814,7 @@ class DesktopOS {
             if (hovercamData) {
                 try {
                     const imageData = JSON.parse(hovercamData);
-                    this.drawImageOnWhiteboard(canvas, ctx, imageData.data, e, state, saveState);
+                    addImageAsObject(imageData.url || imageData.data, e);
                 } catch(err) {
                     console.error('Failed to parse image data:', err);
                 }
@@ -1336,8 +1823,8 @@ class DesktopOS {
             
             // Check for image URL
             const imageUrl = e.dataTransfer.getData('text/plain');
-            if (imageUrl && (imageUrl.startsWith('data:image') || imageUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i))) {
-                this.drawImageOnWhiteboard(canvas, ctx, imageUrl, e, state, saveState);
+            if (imageUrl && (imageUrl.startsWith('data:image') || imageUrl.startsWith('http') || imageUrl.match(/\.(jpg|jpeg|png|gif|webp)/i))) {
+                addImageAsObject(imageUrl, e);
             }
         });
 
@@ -1352,12 +1839,31 @@ class DesktopOS {
         if (!loadPersistedCanvas()) {
             saveState();
         }
+        
+        // Load persisted objects
+        loadObjectsState();
 
         // Observe resize
         const resizeObserver = new ResizeObserver(() => {
             resizeCanvas();
         });
         resizeObserver.observe(container);
+
+        // Keyboard shortcuts
+        windowEl.addEventListener('keydown', (e) => {
+            if (e.key === 's' || e.key === 'S') {
+                // Toggle select mode
+                const selectBtn = toolbar.querySelector('.wb-select-btn');
+                if (selectBtn) selectBtn.click();
+            } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                // Delete selected object
+                if (state.selectedObject) {
+                    deleteObject(state.selectedObject.id);
+                }
+            } else if (e.key === 'Escape') {
+                deselectAll();
+            }
+        });
 
         // Store reference for cleanup
         windowEl.whiteboardCleanup = () => {
