@@ -1720,6 +1720,174 @@ body.dark-mode .desktop-icon-label {
     display: none;
 }
 
+
+/* ==================== CAMERA APP ==================== */
+.camera-app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    margin: -20px;
+    background: #000000;
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+}
+
+.window.maximized .camera-app {
+    border-radius: 0;
+}
+
+.camera-viewport {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #1a1a1a;
+    cursor: grab;
+}
+
+.camera-viewport.dragging {
+    cursor: grabbing;
+    outline: 3px solid var(--primary-color);
+    outline-offset: -3px;
+}
+
+.camera-video {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    transition: transform 0.3s ease;
+}
+
+.camera-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    color: #666666;
+}
+
+.camera-placeholder.hidden {
+    display: none;
+}
+
+.camera-placeholder svg {
+    width: 64px;
+    height: 64px;
+    stroke: #444444;
+}
+
+.camera-placeholder p {
+    font-size: 14px;
+    margin: 0;
+}
+
+.camera-drag-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(245, 124, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.camera-drag-overlay.hidden {
+    display: none;
+}
+
+.drag-hint {
+    background: var(--primary-color);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.camera-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: rgba(30, 30, 40, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.camera-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    color: #ffffff;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.camera-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.camera-btn.active {
+    background: var(--primary-color);
+}
+
+.camera-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    fill: none;
+}
+
+.camera-start-btn {
+    background: #43a047;
+}
+
+.camera-start-btn:hover {
+    background: #388e3c;
+}
+
+.camera-start-btn.active {
+    background: #e53935;
+}
+
+.camera-start-btn.active:hover {
+    background: #c62828;
+}
+
+.camera-divider {
+    width: 1px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.2);
+    margin: 0 4px;
+}
+
+.camera-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.5);
+    font-size: 12px;
+    color: #888888;
+}
+
+.camera-status-text {
+    color: #888888;
+}
+
+.camera-rotation-info {
+    color: var(--primary-color);
+    font-weight: 500;
+}
 /* ==================== BROWSER APP ==================== */
 .browser-app {
     display: flex;

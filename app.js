@@ -44,6 +44,13 @@ class DesktopOS {
                 content: () => this.renderWhiteboardApp()
             },
             {
+            },
+            {
+                id: "camera",
+                name: "Camera",
+                icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+                defaultSize: { width: 640, height: 520 },
+                content: () => this.renderCameraApp()
                 id: "browser",
                 name: "Browser",
                 icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
@@ -593,6 +600,10 @@ class DesktopOS {
         if (appId === "files") {
             setTimeout(() => this.initFiles(windowEl), 50);
         }
+        
+        if (appId === "camera") {
+            setTimeout(() => this.initCamera(windowEl), 50);
+        }
     }
 
     bindSettingsEvents(windowEl) {
@@ -830,6 +841,9 @@ class DesktopOS {
     closeWindow(appId) {
         const win = this.windows.get(appId);
         if (!win) return;
+        // Cleanup camera if needed
+        if (win.element.cameraCleanup) win.element.cameraCleanup();
+        if (win.element.whiteboardCleanup) win.element.whiteboardCleanup();
         win.element.remove();
         this.windows.delete(appId);
         this.updateTaskbarActive(appId, false);
@@ -2726,6 +2740,196 @@ class DesktopOS {
         updatePath();
     }
 
+
+    renderCameraApp() {
+        return '<div class="camera-app" data-app-id="camera">' +
+            '<div class="camera-viewport">' +
+                '<video class="camera-video" autoplay playsinline></video>' +
+                '<canvas class="camera-canvas" style="display:none;"></canvas>' +
+                '<div class="camera-placeholder">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>' +
+                    '<p>Click Start Camera to begin</p>' +
+                '</div>' +
+                '<div class="camera-drag-overlay hidden">' +
+                    '<div class="drag-hint">Drag to Whiteboard, Files, or Desktop</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="camera-toolbar">' +
+                '<button class="camera-btn camera-start-btn" data-action="start" title="Start Camera">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
+                    '<span>Start</span>' +
+                '</button>' +
+                '<button class="camera-btn" data-action="snapshot" title="Take Snapshot">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>' +
+                    '<span>Snapshot</span>' +
+                '</button>' +
+                '<div class="camera-divider"></div>' +
+                '<button class="camera-btn" data-action="rotate" title="Rotate 90°">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115-6.7L21 8"/></svg>' +
+                    '<span>Rotate</span>' +
+                '</button>' +
+                '<button class="camera-btn" data-action="mirror" title="Mirror">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 6H4v12h4"/><path d="M16 6h4v12h-4"/></svg>' +
+                    '<span>Mirror</span>' +
+                '</button>' +
+            '</div>' +
+            '<div class="camera-status">' +
+                '<span class="camera-status-text">Ready</span>' +
+                '<span class="camera-rotation-info">90°</span>' +
+            '</div>' +
+        '</div>';
+    }
+
+    initCamera(windowEl) {
+        const video = windowEl.querySelector(".camera-video");
+        const canvas = windowEl.querySelector(".camera-canvas");
+        const ctx = canvas.getContext("2d");
+        const placeholder = windowEl.querySelector(".camera-placeholder");
+        const statusText = windowEl.querySelector(".camera-status-text");
+        const rotationInfo = windowEl.querySelector(".camera-rotation-info");
+        const viewport = windowEl.querySelector(".camera-viewport");
+        const dragOverlay = windowEl.querySelector(".camera-drag-overlay");
+        const self = this;
+        
+        let stream = null;
+        let rotation = 90; // Default 90 degrees for document camera
+        let mirrored = false;
+        let isRunning = false;
+        
+        // Update viewport transform
+        const updateTransform = () => {
+            let transform = "rotate(" + rotation + "deg)";
+            if (mirrored) transform += " scaleX(-1)";
+            video.style.transform = transform;
+            rotationInfo.textContent = rotation + "°" + (mirrored ? " M" : "");
+        };
+        
+        // Start camera
+        const startCamera = async () => {
+            try {
+                statusText.textContent = "Starting camera...";
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+                    audio: false
+                });
+                video.srcObject = stream;
+                placeholder.classList.add("hidden");
+                isRunning = true;
+                statusText.textContent = "Camera active";
+                
+                // Update start button to stop
+                const startBtn = windowEl.querySelector("[data-action=start]");
+                startBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg><span>Stop</span>';
+                startBtn.classList.add("active");
+                
+                updateTransform();
+            } catch (err) {
+                console.error("Camera error:", err);
+                statusText.textContent = "Camera access denied";
+                self.showNotification("Could not access camera: " + err.message, "error");
+            }
+        };
+        
+        // Stop camera
+        const stopCamera = () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+            placeholder.classList.remove("hidden");
+            isRunning = false;
+            statusText.textContent = "Camera stopped";
+            
+            const startBtn = windowEl.querySelector("[data-action=start]");
+            startBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Start</span>';
+            startBtn.classList.remove("active");
+        };
+        
+        // Take snapshot and get data URL
+        const takeSnapshot = () => {
+            if (!isRunning) {
+                self.showNotification("Start the camera first", "error");
+                return null;
+            }
+            
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            
+            // Handle rotation
+            if (rotation === 90 || rotation === 270) {
+                canvas.width = vh;
+                canvas.height = vw;
+            } else {
+                canvas.width = vw;
+                canvas.height = vh;
+            }
+            
+            ctx.save();
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate(rotation * Math.PI / 180);
+            if (mirrored) ctx.scale(-1, 1);
+            ctx.drawImage(video, -vw / 2, -vh / 2, vw, vh);
+            ctx.restore();
+            
+            return canvas.toDataURL("image/png");
+        };
+        
+        // Button handlers
+        windowEl.querySelectorAll(".camera-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const action = btn.dataset.action;
+                if (action === "start") {
+                    if (isRunning) stopCamera();
+                    else startCamera();
+                } else if (action === "snapshot") {
+                    const dataUrl = takeSnapshot();
+                    if (dataUrl) {
+                        self.showNotification("Snapshot taken! Drag the viewport to use it.", "success");
+                        dragOverlay.classList.remove("hidden");
+                        setTimeout(() => dragOverlay.classList.add("hidden"), 3000);
+                    }
+                } else if (action === "rotate") {
+                    rotation = (rotation + 90) % 360;
+                    updateTransform();
+                } else if (action === "mirror") {
+                    mirrored = !mirrored;
+                    btn.classList.toggle("active", mirrored);
+                    updateTransform();
+                }
+            });
+        });
+        
+        // Make viewport draggable for snapshots
+        viewport.setAttribute("draggable", "true");
+        viewport.addEventListener("dragstart", (e) => {
+            if (!isRunning) {
+                e.preventDefault();
+                return;
+            }
+            const dataUrl = takeSnapshot();
+            if (dataUrl) {
+                e.dataTransfer.setData("text/plain", dataUrl);
+                e.dataTransfer.setData("application/hovercam-image", JSON.stringify({
+                    name: "camera_" + Date.now() + ".png",
+                    url: dataUrl
+                }));
+                e.dataTransfer.effectAllowed = "copy";
+                viewport.classList.add("dragging");
+            }
+        });
+        viewport.addEventListener("dragend", () => {
+            viewport.classList.remove("dragging");
+        });
+        
+        // Initialize with default transform
+        updateTransform();
+        
+        // Cleanup when window closes
+        windowEl.cameraCleanup = () => {
+            stopCamera();
+        };
+    }
     renderTerminalApp() {
         return '<div class="terminal-app">' +
             '<div class="terminal-line"><span class="term-user">hovercam@desktop</span>:<span class="term-path">~</span>$ <span class="term-cmd">welcome</span></div>' +
