@@ -2485,65 +2485,77 @@ class DesktopOS {
         
         const video = app.querySelector('.camera-video');
         const canvas = app.querySelector('.camera-canvas');
-        const placeholder = app.querySelector('.camera-placeholder');
         const dragOverlay = app.querySelector('.camera-drag-overlay');
         const viewport = app.querySelector('.camera-viewport');
-        const controls = app.querySelector('.camera-controls');
-        const startBtn = app.querySelector('.camera-start-btn');
-        const snapshotBtn = app.querySelector('.camera-snapshot-btn');
-        const settingsBtn = app.querySelector('.camera-settings-btn');
-        const settingsPopover = app.querySelector('.camera-settings-popover');
-        const rotationValue = app.querySelector('.camera-rotation-value');
-        const mirrorValue = app.querySelector('.camera-mirror-value');
-        const stateBadge = app.querySelector('.camera-state-badge');
+        const toolbar = app.querySelector('.camera-toolbar-mini');
+        const sourceSelect = app.querySelector('.camera-source-select');
         
         let stream = null;
         let rotation = 90; // Default 90° for document cameras
         let mirrored = false;
-        let isActive = false;
+        let currentDeviceId = null;
         
         const updateTransform = () => {
             const transforms = [];
             if (rotation !== 0) transforms.push(`rotate(${rotation}deg)`);
             if (mirrored) transforms.push('scaleX(-1)');
             video.style.transform = transforms.join(' ');
-            
-            // Adjust video sizing for 90/270 rotation
-            if (rotation === 90 || rotation === 270) {
-                video.style.width = viewport.offsetHeight + 'px';
-                video.style.height = viewport.offsetWidth + 'px';
-            } else {
-                video.style.width = '100%';
-                video.style.height = '100%';
-            }
-            
-            rotationValue.textContent = rotation + '°';
-            mirrorValue.textContent = mirrored ? 'On' : 'Off';
         };
         
-        const startCamera = async () => {
+        const loadCameraSources = async () => {
             try {
-                stateBadge.textContent = 'Starting...';
-                stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
+                // First request permission to enumerate devices
+                await navigator.mediaDevices.getUserMedia({ video: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                
+                sourceSelect.innerHTML = '';
+                if (videoDevices.length === 0) {
+                    sourceSelect.innerHTML = '<option value="">No cameras found</option>';
+                    return null;
+                }
+                
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Camera ${index + 1}`;
+                    sourceSelect.appendChild(option);
+                });
+                
+                return videoDevices[0].deviceId;
+            } catch (err) {
+                console.error('Error loading cameras:', err);
+                sourceSelect.innerHTML = '<option value="">Camera access denied</option>';
+                return null;
+            }
+        };
+        
+        const startCamera = async (deviceId) => {
+            try {
+                // Stop existing stream
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                
+                const constraints = {
+                    video: {
                         width: { ideal: 1920 },
                         height: { ideal: 1080 }
-                    } 
-                });
+                    }
+                };
+                
+                if (deviceId) {
+                    constraints.video.deviceId = { exact: deviceId };
+                }
+                
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 video.play();
-                placeholder.classList.add('hidden');
-                isActive = true;
-                stateBadge.textContent = 'Live';
-                stateBadge.classList.add('active');
-                startBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-                startBtn.classList.add('active');
-                snapshotBtn.disabled = false;
+                currentDeviceId = deviceId;
                 updateTransform();
             } catch (err) {
                 console.error('Camera error:', err);
-                stateBadge.textContent = 'Error';
-                this.showNotification('Camera access denied', 'error');
+                this.showNotification('Camera error: ' + err.message, 'error');
             }
         };
         
@@ -2553,23 +2565,15 @@ class DesktopOS {
                 stream = null;
             }
             video.srcObject = null;
-            placeholder.classList.remove('hidden');
-            isActive = false;
-            stateBadge.textContent = 'Stopped';
-            stateBadge.classList.remove('active');
-            startBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
-            startBtn.classList.remove('active');
-            snapshotBtn.disabled = true;
         };
         
         const captureSnapshot = () => {
-            if (!isActive) return null;
+            if (!stream) return null;
             
             const ctx = canvas.getContext('2d');
             const vw = video.videoWidth;
             const vh = video.videoHeight;
             
-            // Set canvas size based on rotation
             if (rotation === 90 || rotation === 270) {
                 canvas.width = vh;
                 canvas.height = vw;
@@ -2588,20 +2592,21 @@ class DesktopOS {
             return canvas.toDataURL('image/jpeg', 0.9);
         };
         
-        // Control button handlers
-        controls.addEventListener('click', (e) => {
-            const btn = e.target.closest('.camera-ctrl-btn');
+        // Camera source change
+        sourceSelect.addEventListener('change', (e) => {
+            if (e.target.value) {
+                startCamera(e.target.value);
+            }
+        });
+        
+        // Toolbar button handlers
+        toolbar.addEventListener('click', (e) => {
+            const btn = e.target.closest('.camera-mini-btn');
             if (!btn) return;
             
             const action = btn.dataset.action;
             
-            if (action === 'start') {
-                if (isActive) {
-                    stopCamera();
-                } else {
-                    startCamera();
-                }
-            } else if (action === 'snapshot') {
+            if (action === 'snapshot') {
                 const dataUrl = captureSnapshot();
                 if (dataUrl) {
                     const link = document.createElement('a');
@@ -2610,46 +2615,21 @@ class DesktopOS {
                     link.click();
                     this.showNotification('Snapshot saved', 'success');
                 }
-            }
-        });
-        
-        // Settings button toggle
-        settingsBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            settingsPopover.classList.toggle('hidden');
-            settingsBtn.classList.toggle('active', !settingsPopover.classList.contains('hidden'));
-        });
-        
-        // Settings popover handlers
-        settingsPopover.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const btn = e.target.closest('.camera-setting-btn');
-            if (!btn) return;
-            
-            const action = btn.dataset.action;
-            
-            if (action === 'rotate') {
+            } else if (action === 'rotate') {
                 rotation = (rotation + 90) % 360;
-                if (isActive) updateTransform();
-                rotationValue.textContent = rotation + '°';
+                updateTransform();
+                btn.title = `Rotate (${rotation}°)`;
             } else if (action === 'mirror') {
                 mirrored = !mirrored;
                 btn.classList.toggle('active', mirrored);
-                if (isActive) updateTransform();
-                mirrorValue.textContent = mirrored ? 'On' : 'Off';
+                updateTransform();
             }
         });
         
-        // Close settings when clicking outside
-        app.addEventListener('click', () => {
-            settingsPopover.classList.add('hidden');
-            settingsBtn.classList.remove('active');
-        });
-        
-        // Make viewport draggable for desktop/whiteboard/files
+        // Make viewport draggable
         viewport.draggable = true;
         viewport.addEventListener('dragstart', (e) => {
-            if (!isActive) {
+            if (!stream) {
                 e.preventDefault();
                 return;
             }
@@ -2672,9 +2652,14 @@ class DesktopOS {
             stopCamera();
         };
         
-        // Initialize display
-        rotationValue.textContent = rotation + '°';
+        // Auto-start: load sources and start first camera
+        loadCameraSources().then(deviceId => {
+            if (deviceId) {
+                startCamera(deviceId);
+            }
+        });
     }
+
 
     initFiles(windowEl) {
         const filesGrid = windowEl.querySelector('.files-grid');
@@ -3012,47 +2997,23 @@ class DesktopOS {
             '<div class="camera-viewport">' +
                 '<video class="camera-video" autoplay playsinline></video>' +
                 '<canvas class="camera-canvas" style="display:none;"></canvas>' +
-                '<div class="camera-placeholder">' +
-                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>' +
-                    '<span>Click Start to begin</span>' +
-                '</div>' +
                 '<div class="camera-drag-overlay hidden">' +
-                    '<span>Drag to desktop, whiteboard, or files</span>' +
+                    '<span>Drop to save</span>' +
                 '</div>' +
-                '<div class="camera-controls">' +
-                    '<button class="camera-ctrl-btn camera-start-btn" data-action="start" title="Start Camera">' +
-                        '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>' +
-                    '</button>' +
-                    '<button class="camera-ctrl-btn camera-snapshot-btn" data-action="snapshot" title="Take Snapshot" disabled>' +
-                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>' +
-                    '</button>' +
-                '</div>' +
-                '<div class="camera-settings-wrapper">' +
-                    '<button class="camera-settings-btn" title="Camera Settings">' +
-                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>' +
-                    '</button>' +
-                    '<div class="camera-settings-popover hidden">' +
-                        '<div class="camera-setting-item">' +
-                            '<span class="camera-setting-label">Rotation</span>' +
-                            '<div class="camera-setting-controls">' +
-                                '<button class="camera-setting-btn" data-action="rotate" title="Rotate 90°">' +
-                                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>' +
-                                '</button>' +
-                                '<span class="camera-rotation-value">90°</span>' +
-                            '</div>' +
-                        '</div>' +
-                        '<div class="camera-setting-item">' +
-                            '<span class="camera-setting-label">Mirror</span>' +
-                            '<div class="camera-setting-controls">' +
-                                '<button class="camera-setting-btn" data-action="mirror" title="Toggle Mirror">' +
-                                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg>' +
-                                '</button>' +
-                                '<span class="camera-mirror-value">Off</span>' +
-                            '</div>' +
-                        '</div>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="camera-state-badge">Ready</div>' +
+            '</div>' +
+            '<div class="camera-toolbar-mini">' +
+                '<select class="camera-source-select" title="Select Camera">' +
+                    '<option value="">Loading cameras...</option>' +
+                '</select>' +
+                '<button class="camera-mini-btn" data-action="snapshot" title="Snapshot">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>' +
+                '</button>' +
+                '<button class="camera-mini-btn" data-action="rotate" title="Rotate 90°">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>' +
+                '</button>' +
+                '<button class="camera-mini-btn" data-action="mirror" title="Mirror">' +
+                    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg>' +
+                '</button>' +
             '</div>' +
         '</div>';
     }
