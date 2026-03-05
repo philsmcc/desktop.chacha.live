@@ -38,6 +38,13 @@ class DesktopOS {
                 content: () => this.renderWhiteboardApp()
             },
             {
+                id: "browser",
+                name: "Browser",
+                icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+                defaultSize: { width: 1000, height: 700 },
+                content: () => this.renderBrowserApp()
+            },
+            {
                 id: "welcome",
                 name: "Welcome",
                 icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
@@ -567,6 +574,10 @@ class DesktopOS {
             // Small delay to ensure DOM is ready
             setTimeout(() => this.initWhiteboard(windowEl), 50);
         }
+        
+        if (appId === "browser") {
+            setTimeout(() => this.initBrowser(windowEl), 50);
+        }
     }
 
     bindSettingsEvents(windowEl) {
@@ -1023,7 +1034,54 @@ class DesktopOS {
                 state.history.shift();
                 state.historyIndex--;
             }
+            // Persist to localStorage
+            persistCanvas();
         };
+        
+        // Persist canvas to localStorage
+        const persistCanvas = () => {
+            try {
+                const canvasData = canvas.toDataURL('image/png');
+                localStorage.setItem('hovercam_whiteboard_canvas', canvasData);
+                localStorage.setItem('hovercam_whiteboard_bgColor', state.bgColor);
+            } catch(e) {
+                console.warn('Could not persist whiteboard:', e);
+            }
+        };
+        
+        // Load persisted canvas
+        const loadPersistedCanvas = () => {
+            try {
+                const savedCanvas = localStorage.getItem('hovercam_whiteboard_canvas');
+                const savedBgColor = localStorage.getItem('hovercam_whiteboard_bgColor');
+                
+                if (savedBgColor) {
+                    state.bgColor = savedBgColor;
+                }
+                
+                if (savedCanvas) {
+                    const img = new Image();
+                    img.onload = () => {
+                        const dpr = window.devicePixelRatio || 1;
+                        ctx.setTransform(1, 0, 0, 1, 0, 0);
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0);
+                        ctx.scale(dpr, dpr);
+                        // Save to history after loading
+                        state.history = [savedCanvas];
+                        state.historyIndex = 0;
+                    };
+                    img.src = savedCanvas;
+                    return true;
+                }
+            } catch(e) {
+                console.warn('Could not load persisted whiteboard:', e);
+            }
+            return false;
+        };
+
+        // Expose save function for external calls (e.g., paste image)
+        windowEl.whiteboardSaveState = saveState;
 
         // Restore state from history
         const restoreState = (index) => {
@@ -1217,6 +1275,11 @@ class DesktopOS {
                         const rect = container.getBoundingClientRect();
                         ctx.fillStyle = state.bgColor;
                         ctx.fillRect(0, 0, rect.width, rect.height);
+                        // Clear persisted canvas
+                        localStorage.removeItem('hovercam_whiteboard_canvas');
+                        // Reset history
+                        state.history = [];
+                        state.historyIndex = -1;
                         saveState();
                     }
                 }
@@ -1232,7 +1295,11 @@ class DesktopOS {
 
         // Initial setup
         resizeCanvas();
-        saveState();
+        
+        // Try to load persisted canvas, otherwise save initial state
+        if (!loadPersistedCanvas()) {
+            saveState();
+        }
 
         // Observe resize
         const resizeObserver = new ResizeObserver(() => {
@@ -1256,6 +1323,195 @@ class DesktopOS {
                 '<div class="stat-card"><h3>100%</h3><p>System Health</p></div>' +
             '</div>' +
         '</div>';
+    }
+
+    renderBrowserApp() {
+        return '<div class="browser-app" data-app-id="browser">' +
+            '<div class="browser-toolbar">' +
+                '<div class="browser-nav-buttons">' +
+                    '<button class="browser-nav-btn" data-action="back" title="Back">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>' +
+                    '</button>' +
+                    '<button class="browser-nav-btn" data-action="forward" title="Forward">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
+                    '</button>' +
+                    '<button class="browser-nav-btn" data-action="refresh" title="Refresh">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>' +
+                    '</button>' +
+                '</div>' +
+                '<div class="browser-url-bar">' +
+                    '<svg class="browser-url-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' +
+                    '<input type="text" class="browser-url-input" placeholder="Enter URL or search..." value="https://www.wikipedia.org">' +
+                    '<button class="browser-go-btn" title="Go">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
+                    '</button>' +
+                '</div>' +
+                '<div class="browser-actions">' +
+                    '<button class="browser-action-btn browser-clip-btn" data-action="clip" title="Clip Mode - Drag content to Whiteboard">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+                    '</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="browser-content">' +
+                '<iframe class="browser-iframe" src="https://www.wikipedia.org" sandbox="allow-same-origin allow-scripts allow-popups allow-forms"></iframe>' +
+                '<div class="browser-clip-overlay hidden">' +
+                    '<div class="clip-instructions">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+                        '<span>Clip Mode Active</span>' +
+                        '<p>Click on images to copy them to the Whiteboard</p>' +
+                        '<button class="clip-exit-btn">Exit Clip Mode</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="browser-status-bar">' +
+                '<span class="browser-status-text">Ready</span>' +
+                '<span class="browser-status-hint">Tip: Use Clip Mode to capture content for your Whiteboard</span>' +
+            '</div>' +
+        '</div>';
+    }
+
+    initBrowser(windowEl) {
+        const urlInput = windowEl.querySelector('.browser-url-input');
+        const iframe = windowEl.querySelector('.browser-iframe');
+        const goBtn = windowEl.querySelector('.browser-go-btn');
+        const statusText = windowEl.querySelector('.browser-status-text');
+        const clipOverlay = windowEl.querySelector('.browser-clip-overlay');
+        const clipBtn = windowEl.querySelector('.browser-clip-btn');
+        const clipExitBtn = windowEl.querySelector('.clip-exit-btn');
+        let clipMode = false;
+
+        // Navigation
+        const navigate = (url) => {
+            let finalUrl = url.trim();
+            if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+                if (finalUrl.includes('.') && !finalUrl.includes(' ')) {
+                    finalUrl = 'https://' + finalUrl;
+                } else {
+                    finalUrl = 'https://www.google.com/search?igu=1&q=' + encodeURIComponent(finalUrl);
+                }
+            }
+            urlInput.value = finalUrl;
+            iframe.src = finalUrl;
+            statusText.textContent = 'Loading...';
+        };
+
+        // URL input handlers
+        urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                navigate(urlInput.value);
+            }
+        });
+
+        goBtn.addEventListener('click', () => navigate(urlInput.value));
+
+        // Navigation buttons
+        windowEl.querySelectorAll('.browser-nav-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.action;
+                if (action === 'back') {
+                    try { iframe.contentWindow.history.back(); } catch(e) {}
+                } else if (action === 'forward') {
+                    try { iframe.contentWindow.history.forward(); } catch(e) {}
+                } else if (action === 'refresh') {
+                    iframe.src = iframe.src;
+                    statusText.textContent = 'Refreshing...';
+                }
+            });
+        });
+
+        // Iframe load handler
+        iframe.addEventListener('load', () => {
+            statusText.textContent = 'Ready';
+            try {
+                const newUrl = iframe.contentWindow.location.href;
+                if (newUrl && newUrl !== 'about:blank') {
+                    urlInput.value = newUrl;
+                }
+            } catch(e) {
+                // Cross-origin - can't access URL
+            }
+        });
+
+        // Clip mode toggle
+        clipBtn.addEventListener('click', () => {
+            clipMode = !clipMode;
+            clipBtn.classList.toggle('active', clipMode);
+            clipOverlay.classList.toggle('hidden', !clipMode);
+            statusText.textContent = clipMode ? 'Clip Mode Active - Click images to capture' : 'Ready';
+        });
+
+        clipExitBtn.addEventListener('click', () => {
+            clipMode = false;
+            clipBtn.classList.remove('active');
+            clipOverlay.classList.add('hidden');
+            statusText.textContent = 'Ready';
+        });
+
+        // Image paste functionality - listen for messages from iframe
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'clipImage' && clipMode) {
+                this.pasteImageToWhiteboard(e.data.src);
+                statusText.textContent = 'Image copied to Whiteboard!';
+                setTimeout(() => { statusText.textContent = 'Clip Mode Active'; }, 2000);
+            }
+        });
+    }
+
+    // Paste image to whiteboard canvas
+    pasteImageToWhiteboard(imageSrc) {
+        // Find or open whiteboard
+        let whiteboardWindow = this.windows.get('whiteboard');
+        if (!whiteboardWindow) {
+            this.openApp('whiteboard');
+            whiteboardWindow = this.windows.get('whiteboard');
+        }
+
+        if (whiteboardWindow) {
+            const canvas = whiteboardWindow.querySelector('.wb-canvas');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    // Scale image to fit nicely on canvas
+                    const maxWidth = canvas.width * 0.4 / (window.devicePixelRatio || 1);
+                    const maxHeight = canvas.height * 0.4 / (window.devicePixelRatio || 1);
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    if (width > maxWidth) {
+                        height = height * (maxWidth / width);
+                        width = maxWidth;
+                    }
+                    if (height > maxHeight) {
+                        width = width * (maxHeight / height);
+                        height = maxHeight;
+                    }
+                    
+                    // Draw in center
+                    const x = (canvas.width / (window.devicePixelRatio || 1) - width) / 2;
+                    const y = (canvas.height / (window.devicePixelRatio || 1) - height) / 2;
+                    ctx.drawImage(img, x, y, width, height);
+                    
+                    // Save state for undo
+                    this.saveWhiteboardState();
+                    
+                    this.showNotification('Image added to Whiteboard!', 'success');
+                };
+                img.onerror = () => {
+                    this.showNotification('Could not load image (CORS restriction)', 'error');
+                };
+                img.src = imageSrc;
+            }
+        }
+    }
+
+    // Save whiteboard state (called after paste)
+    saveWhiteboardState() {
+        const whiteboardWindow = this.windows.get('whiteboard');
+        if (whiteboardWindow && whiteboardWindow.whiteboardSaveState) {
+            whiteboardWindow.whiteboardSaveState();
+        }
     }
 
     renderFilesApp() {

@@ -1147,3 +1147,359 @@ body.dark-mode .desktop-icon-label {
 .window.maximized .window-resize {
     display: none;
 }
+
+/* ==================== BROWSER APP ==================== */
+.browser-app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    margin: -20px;
+    background: var(--bg-darker);
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+}
+
+.window.maximized .browser-app {
+    border-radius: 0;
+}
+
+/* Browser Toolbar */
+.browser-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.browser-nav-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.browser-nav-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.browser-nav-btn:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--primary-color);
+}
+
+.browser-nav-btn:active {
+    transform: scale(0.95);
+}
+
+.browser-nav-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--text-secondary);
+}
+
+.browser-nav-btn:hover svg {
+    stroke: var(--primary-color);
+}
+
+/* URL Bar */
+.browser-url-bar {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 0 12px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.browser-url-bar:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(245, 124, 0, 0.15);
+}
+
+.browser-url-icon {
+    width: 16px;
+    height: 16px;
+    stroke: var(--text-muted);
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+
+.browser-url-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 14px;
+    padding: 10px 0;
+    outline: none;
+}
+
+.browser-url-input::placeholder {
+    color: var(--text-muted);
+}
+
+.browser-go-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--primary-color);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 8px;
+}
+
+.browser-go-btn:hover {
+    background: var(--primary-hover);
+    transform: scale(1.05);
+}
+
+.browser-go-btn svg {
+    width: 16px;
+    height: 16px;
+    stroke: white;
+}
+
+/* Browser Actions */
+.browser-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.browser-action-btn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.browser-action-btn:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--primary-color);
+}
+
+.browser-action-btn.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.browser-action-btn svg {
+    width: 20px;
+    height: 20px;
+    stroke: var(--text-secondary);
+}
+
+.browser-action-btn:hover svg {
+    stroke: var(--primary-color);
+}
+
+.browser-action-btn.active svg {
+    stroke: white;
+}
+
+/* Browser Content */
+.browser-content {
+    flex: 1;
+    position: relative;
+    background: #ffffff;
+    overflow: hidden;
+}
+
+.browser-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #ffffff;
+}
+
+/* Clip Overlay */
+.browser-clip-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(245, 124, 0, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    backdrop-filter: blur(2px);
+    transition: opacity 0.3s;
+}
+
+.browser-clip-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.clip-instructions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 30px 40px;
+    background: var(--bg-card);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    border: 2px solid var(--primary-color);
+    text-align: center;
+}
+
+.clip-instructions svg {
+    width: 48px;
+    height: 48px;
+    stroke: var(--primary-color);
+}
+
+.clip-instructions span {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.clip-instructions p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin: 0;
+}
+
+.clip-exit-btn {
+    padding: 10px 24px;
+    background: var(--primary-color);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 8px;
+}
+
+.clip-exit-btn:hover {
+    background: var(--primary-hover);
+    transform: scale(1.02);
+}
+
+/* Browser Status Bar */
+.browser-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+    font-size: 12px;
+}
+
+.browser-status-text {
+    color: var(--text-secondary);
+}
+
+.browser-status-hint {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Browser responsive for touch panels */
+@media (min-width: 1920px) {
+    .browser-toolbar {
+        padding: 12px 16px;
+    }
+    
+    .browser-nav-btn {
+        width: 44px;
+        height: 44px;
+    }
+    
+    .browser-nav-btn svg {
+        width: 22px;
+        height: 22px;
+    }
+    
+    .browser-url-input {
+        font-size: 16px;
+        padding: 12px 0;
+    }
+    
+    .browser-action-btn {
+        width: 48px;
+        height: 48px;
+    }
+    
+    .browser-action-btn svg {
+        width: 24px;
+        height: 24px;
+    }
+}
+
+@media (min-width: 3000px) {
+    .browser-toolbar {
+        padding: 16px 24px;
+        gap: 16px;
+    }
+    
+    .browser-nav-btn {
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+    }
+    
+    .browser-nav-btn svg {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .browser-url-bar {
+        border-radius: 28px;
+        padding: 0 20px;
+    }
+    
+    .browser-url-input {
+        font-size: 18px;
+        padding: 16px 0;
+    }
+    
+    .browser-go-btn {
+        width: 44px;
+        height: 44px;
+    }
+    
+    .browser-action-btn {
+        width: 60px;
+        height: 60px;
+        border-radius: 14px;
+    }
+    
+    .browser-action-btn svg {
+        width: 30px;
+        height: 30px;
+    }
+    
+    .browser-status-bar {
+        padding: 10px 20px;
+        font-size: 14px;
+    }
+}
