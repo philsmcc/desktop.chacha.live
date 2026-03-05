@@ -2381,7 +2381,7 @@ class DesktopOS {
                 // Render files
                 currentFiles.forEach((file, index) => {
                     const isImage = file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-                    html += '<div class="file-item" data-type="file" data-index="' + index + '" data-path="' + file.path + '" draggable="' + (isImage ? 'true' : 'false') + '">' +
+                    html += '<div class="file-item" data-type="file" data-index="' + index + '" data-path="' + file.path + '" data-name="' + file.name + '" draggable="' + (isImage ? 'true' : 'false') + '">' +
                         '<div class="file-icon' + (isImage ? ' image-icon' : '') + '">' +
                             (isImage ? 
                                 '<img src="" alt="' + file.name + '" data-path="' + file.path + '" class="file-thumbnail">' :
@@ -2394,11 +2394,16 @@ class DesktopOS {
                 
                 filesGrid.innerHTML = html;
                 
-                // Load thumbnails for images
+                // Load thumbnails for images and store signed URLs
                 filesGrid.querySelectorAll('.file-thumbnail').forEach(async img => {
                     try {
                         const response = await self.api('/files/url?path=' + encodeURIComponent(img.dataset.path));
                         img.src = response.url;
+                        // Store the signed URL on the parent file-item for drag operations
+                        const fileItem = img.closest('.file-item');
+                        if (fileItem) {
+                            fileItem.dataset.signedUrl = response.url;
+                        }
                     } catch (e) {
                         console.error('Failed to load thumbnail:', e);
                     }
@@ -2416,18 +2421,23 @@ class DesktopOS {
                 
                 // Add drag handlers for image files
                 filesGrid.querySelectorAll('.file-item[draggable="true"]').forEach(item => {
-                    item.addEventListener('dragstart', async (e) => {
-                        const filePath = item.dataset.path;
-                        try {
-                            const response = await self.api('/files/url?path=' + encodeURIComponent(filePath));
-                            e.dataTransfer.setData('text/plain', response.url);
+                    item.addEventListener('dragstart', (e) => {
+                        // Use pre-fetched signed URL (must be synchronous)
+                        const signedUrl = item.dataset.signedUrl;
+                        const fileName = item.dataset.name;
+                        
+                        if (signedUrl) {
+                            e.dataTransfer.setData('text/plain', signedUrl);
                             e.dataTransfer.setData('application/hovercam-image', JSON.stringify({
-                                name: currentFiles[item.dataset.index].name,
-                                url: response.url
+                                name: fileName,
+                                url: signedUrl
                             }));
+                            e.dataTransfer.effectAllowed = 'copy';
                             item.classList.add('dragging');
-                        } catch (err) {
-                            console.error('Failed to get file URL:', err);
+                        } else {
+                            // URL not ready yet - show message
+                            console.warn('Signed URL not ready yet, please wait for thumbnail to load');
+                            e.preventDefault();
                         }
                     });
                     
