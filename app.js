@@ -927,26 +927,134 @@ class DesktopOS {
     
     openImageViewer(name, url) {
         const windowId = 'imageviewer-' + Date.now();
+        const container = document.getElementById("windows-container");
+        
+        const offset = this.windows.size * 30;
+        const left = 100 + offset;
+        const top = 50 + offset;
+
         const windowEl = document.createElement("div");
         windowEl.className = "window";
         windowEl.id = windowId;
-        windowEl.innerHTML = `
-            <div class="window-header">
-                <span class="window-title">${name}</span>
-                <div class="window-controls">
-                    <button class="window-btn minimize-btn">−</button>
-                    <button class="window-btn maximize-btn">□</button>
-                    <button class="window-btn close-btn">×</button>
-                </div>
-            </div>
-            <div class="window-content" style="padding: 0; display: flex; align-items: center; justify-content: center; background: #1a1a2e;">
-                <img src="${url}" alt="${name}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
-            </div>
-        `;
+        windowEl.style.cssText = 
+            "left: " + left + "px; " +
+            "top: " + top + "px; " +
+            "width: 800px; " +
+            "height: 600px; " +
+            "z-index: " + (++this.windowZIndex) + ";";
+
+        windowEl.innerHTML = 
+            '<div class="window-header">' +
+                '<div class="window-title">🖼️<span>' + name + '</span></div>' +
+                '<div class="window-controls">' +
+                    '<button class="window-control minimize" title="Minimize">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
+                    '</button>' +
+                    '<button class="window-control maximize" title="Maximize">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>' +
+                    '</button>' +
+                    '<button class="window-control close" title="Close">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+                    '</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="window-content" style="display: flex; flex-direction: column; padding: 0; overflow: hidden;">' +
+                '<div class="image-viewer-toolbar" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);">' +
+                    '<button class="zoom-btn" data-action="zoom-out" title="Zoom Out" style="padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-size: 16px;">−</button>' +
+                    '<span class="zoom-level" style="min-width: 60px; text-align: center; font-size: 14px; color: var(--text-primary);">100%</span>' +
+                    '<button class="zoom-btn" data-action="zoom-in" title="Zoom In" style="padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-size: 16px;">+</button>' +
+                    '<button class="zoom-btn" data-action="zoom-fit" title="Fit to Window" style="padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-size: 12px;">Fit</button>' +
+                    '<button class="zoom-btn" data-action="zoom-actual" title="Actual Size" style="padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-size: 12px;">100%</button>' +
+                '</div>' +
+                '<div class="image-viewer-container" style="flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary, #1a1a2e);">' +
+                    '<img class="viewer-image" src="" alt="' + name + '" style="transform-origin: center; transition: transform 0.1s ease;">' +
+                '</div>' +
+            '</div>' +
+            '<div class="window-resize"></div>';
+
+        container.appendChild(windowEl);
+        this.windows.set(windowId, { element: windowEl, minimized: false });
+        this.bindWindowEvents(windowEl, windowId);
         
-        document.getElementById("windows-container").appendChild(windowEl);
-        this.initWindow(windowEl, { name: name, id: windowId });
-        this.positionWindow(windowEl);
+        // Initialize image viewer
+        this.initImageViewer(windowEl, url);
+    }
+    
+    initImageViewer(windowEl, url) {
+        const img = windowEl.querySelector('.viewer-image');
+        const zoomDisplay = windowEl.querySelector('.zoom-level');
+        const imageContainer = windowEl.querySelector('.image-viewer-container');
+        let currentZoom = 100;
+        
+        // Load image and determine initial zoom
+        img.onload = () => {
+            const naturalWidth = img.naturalWidth;
+            const naturalHeight = img.naturalHeight;
+            
+            // If image is larger than 2000px in any direction, start at 50%
+            if (naturalWidth > 2000 || naturalHeight > 2000) {
+                currentZoom = 50;
+            } else {
+                currentZoom = 100;
+            }
+            
+            updateZoom();
+        };
+        
+        img.src = url;
+        
+        const updateZoom = () => {
+            img.style.transform = 'scale(' + (currentZoom / 100) + ')';
+            zoomDisplay.textContent = currentZoom + '%';
+        };
+        
+        // Zoom button handlers
+        windowEl.querySelectorAll('.zoom-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const action = btn.dataset.action;
+                
+                switch (action) {
+                    case 'zoom-in':
+                        currentZoom = Math.min(currentZoom + 25, 500);
+                        break;
+                    case 'zoom-out':
+                        currentZoom = Math.max(currentZoom - 25, 25);
+                        break;
+                    case 'zoom-fit':
+                        // Calculate fit zoom
+                        const containerRect = imageContainer.getBoundingClientRect();
+                        const scaleX = (containerRect.width - 40) / img.naturalWidth;
+                        const scaleY = (containerRect.height - 40) / img.naturalHeight;
+                        currentZoom = Math.round(Math.min(scaleX, scaleY) * 100);
+                        currentZoom = Math.max(25, Math.min(currentZoom, 100));
+                        break;
+                    case 'zoom-actual':
+                        currentZoom = 100;
+                        break;
+                }
+                
+                updateZoom();
+            });
+            
+            // Hover effect
+            btn.addEventListener('mouseenter', () => {
+                btn.style.background = 'var(--bg-hover, #333)';
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.style.background = 'var(--bg-primary)';
+            });
+        });
+        
+        // Mouse wheel zoom
+        imageContainer.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            if (e.deltaY < 0) {
+                currentZoom = Math.min(currentZoom + 10, 500);
+            } else {
+                currentZoom = Math.max(currentZoom - 10, 25);
+            }
+            updateZoom();
+        });
     }
 
     makeIconDraggable(icon, customId = null) {
