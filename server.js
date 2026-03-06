@@ -29,7 +29,6 @@ const pool = new Pool({
     connectionTimeoutMillis: 2000,
 });
 
-// Test database connection
 pool.query('SELECT NOW()')
     .then(() => console.log('✓ PostgreSQL connected'))
     .catch(err => console.error('✗ PostgreSQL connection error:', err.message));
@@ -66,7 +65,6 @@ const BUCKET = process.env.S3_BUCKET;
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@hovercam.com';
 const APP_URL = process.env.APP_URL || 'https://desktop.chacha.live';
 
-// Default wallpapers
 const defaultWallpapers = [
     { id: 'default1', name: 'Gradient Dark', url: '/wallpapers/gradient-dark.jpg' },
     { id: 'default2', name: 'Gradient Light', url: '/wallpapers/gradient-light.jpg' },
@@ -86,7 +84,7 @@ const authenticateToken = (req, res, next) => {
 };
 
 // Helpers
-const getUserPrefix = (username) => `users/${username}`;
+const getUserPrefix = (email) => `users/${email.replace('@', '_at_').replace(/\./g, '_')}`;
 const getDefaultPreferences = () => ({
     theme: 'light',
     wallpaper: 'gradient-light1',
@@ -98,7 +96,7 @@ const getDefaultPreferences = () => ({
 const generateToken = () => crypto.randomBytes(32).toString('hex');
 
 // Email Templates
-const generateVerificationEmail = (username, verificationUrl) => `
+const generateVerificationEmail = (email, verificationUrl) => `
 <!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f5f7fa;">
@@ -113,7 +111,7 @@ const generateVerificationEmail = (username, verificationUrl) => `
 <tr><td style="background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
 <div style="height:4px;background:linear-gradient(90deg,#f57c00,#ff9800);border-radius:16px 16px 0 0;"></div>
 <div style="padding:40px;">
-<h1 style="margin:0 0 16px;font-size:24px;font-weight:600;color:#1a1a2e;text-align:center;">Welcome aboard, ${username}!</h1>
+<h1 style="margin:0 0 16px;font-size:24px;font-weight:600;color:#1a1a2e;text-align:center;">Welcome to HoverCam!</h1>
 <p style="margin:0 0 32px;font-size:16px;color:#666;text-align:center;line-height:1.6;">Click below to verify your email and activate your account.</p>
 <div style="text-align:center;margin-bottom:32px;">
 <a href="${verificationUrl}" style="display:inline-block;padding:16px 48px;background:linear-gradient(135deg,#f57c00,#e65100);color:#fff;text-decoration:none;font-size:16px;font-weight:600;border-radius:12px;">Verify Email</a>
@@ -124,7 +122,7 @@ const generateVerificationEmail = (username, verificationUrl) => `
 <p style="margin:0;font-size:12px;color:#aaa;">© ${new Date().getFullYear()} HoverCam Desktop</p>
 </td></tr></table></td></tr></table></body></html>`;
 
-const generatePasswordResetEmail = (username, resetUrl) => `
+const generatePasswordResetEmail = (email, resetUrl) => `
 <!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f5f7fa;">
@@ -140,7 +138,6 @@ const generatePasswordResetEmail = (username, resetUrl) => `
 <div style="height:4px;background:linear-gradient(90deg,#f57c00,#ff9800);border-radius:16px 16px 0 0;"></div>
 <div style="padding:40px;">
 <h1 style="margin:0 0 16px;font-size:24px;font-weight:600;color:#1a1a2e;text-align:center;">Reset Your Password</h1>
-<p style="margin:0 0 8px;font-size:16px;color:#666;text-align:center;">Hi ${username},</p>
 <p style="margin:0 0 32px;font-size:16px;color:#666;text-align:center;line-height:1.6;">Click below to create a new password.</p>
 <div style="text-align:center;margin-bottom:32px;">
 <a href="${resetUrl}" style="display:inline-block;padding:16px 48px;background:linear-gradient(135deg,#f57c00,#e65100);color:#fff;text-decoration:none;font-size:16px;font-weight:600;border-radius:12px;">Reset Password</a>
@@ -151,7 +148,7 @@ const generatePasswordResetEmail = (username, resetUrl) => `
 <p style="margin:0;font-size:12px;color:#aaa;">© ${new Date().getFullYear()} HoverCam Desktop</p>
 </td></tr></table></td></tr></table></body></html>`;
 
-const sendVerificationEmail = async (email, username, token) => {
+const sendVerificationEmail = async (email, token) => {
     const verificationUrl = `${APP_URL}/api/auth/verify?token=${token}`;
     await sesClient.send(new SendEmailCommand({
         Source: FROM_EMAIL,
@@ -159,14 +156,14 @@ const sendVerificationEmail = async (email, username, token) => {
         Message: {
             Subject: { Data: 'Verify your HoverCam Desktop account', Charset: 'UTF-8' },
             Body: {
-                Html: { Data: generateVerificationEmail(username, verificationUrl), Charset: 'UTF-8' },
-                Text: { Data: `Welcome ${username}! Verify your email: ${verificationUrl}`, Charset: 'UTF-8' }
+                Html: { Data: generateVerificationEmail(email, verificationUrl), Charset: 'UTF-8' },
+                Text: { Data: `Verify your email: ${verificationUrl}`, Charset: 'UTF-8' }
             }
         }
     }));
 };
 
-const sendPasswordResetEmail = async (email, username, token) => {
+const sendPasswordResetEmail = async (email, token) => {
     const resetUrl = `${APP_URL}/reset-password.html?token=${token}`;
     await sesClient.send(new SendEmailCommand({
         Source: FROM_EMAIL,
@@ -174,8 +171,8 @@ const sendPasswordResetEmail = async (email, username, token) => {
         Message: {
             Subject: { Data: 'Reset your HoverCam Desktop password', Charset: 'UTF-8' },
             Body: {
-                Html: { Data: generatePasswordResetEmail(username, resetUrl), Charset: 'UTF-8' },
-                Text: { Data: `Hi ${username}, reset your password: ${resetUrl}`, Charset: 'UTF-8' }
+                Html: { Data: generatePasswordResetEmail(email, resetUrl), Charset: 'UTF-8' },
+                Text: { Data: `Reset your password: ${resetUrl}`, Charset: 'UTF-8' }
             }
         }
     }));
@@ -183,44 +180,43 @@ const sendPasswordResetEmail = async (email, username, token) => {
 
 // ==================== AUTH ROUTES ====================
 
-// Register
+// Register - Email is the username
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { username, password, email } = req.body;
+        const { email, password } = req.body;
 
-        if (!username || !password || !email) {
-            return res.status(400).json({ error: 'Username, email, and password are required' });
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
         }
-        if (username.length < 3) return res.status(400).json({ error: 'Username must be at least 3 characters' });
-        if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
         
+        const emailLower = email.toLowerCase().trim();
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) return res.status(400).json({ error: 'Please enter a valid email address' });
+        if (!emailRegex.test(emailLower)) return res.status(400).json({ error: 'Please enter a valid email address' });
+        if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-        // Check if username or email exists
+        // Check if email exists
         const existingUser = await pool.query(
-            'SELECT username FROM users WHERE username = $1 OR email = $2 UNION SELECT username FROM pending_users WHERE username = $1 OR email = $2',
-            [username, email]
+            'SELECT email FROM users WHERE email = $1 UNION SELECT email FROM pending_users WHERE email = $1',
+            [emailLower]
         );
         if (existingUser.rows.length > 0) {
-            return res.status(409).json({ error: 'Username or email already exists' });
+            return res.status(409).json({ error: 'An account with this email already exists' });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const verificationToken = generateToken();
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-        // Insert into pending_users
         await pool.query(
             'INSERT INTO pending_users (username, email, password_hash, verification_token, token_expires_at) VALUES ($1, $2, $3, $4, $5)',
-            [username, email, hashedPassword, verificationToken, expiresAt]
+            [emailLower, emailLower, hashedPassword, verificationToken, expiresAt]
         );
 
         try {
-            await sendVerificationEmail(email, username, verificationToken);
+            await sendVerificationEmail(emailLower, verificationToken);
         } catch (emailError) {
             console.error('Email error:', emailError);
-            await pool.query('DELETE FROM pending_users WHERE username = $1', [username]);
+            await pool.query('DELETE FROM pending_users WHERE email = $1', [emailLower]);
             return res.status(500).json({ error: 'Failed to send verification email. Please try again.' });
         }
 
@@ -253,22 +249,21 @@ app.get('/api/auth/verify', async (req, res) => {
         // Move to users table
         await pool.query(
             'INSERT INTO users (username, email, password_hash, email_verified, verified_at) VALUES ($1, $2, $3, true, NOW())',
-            [pendingUser.username, pendingUser.email, pendingUser.password_hash]
+            [pendingUser.email, pendingUser.email, pendingUser.password_hash]
         );
 
-        // Delete from pending
         await pool.query('DELETE FROM pending_users WHERE id = $1', [pendingUser.id]);
 
         // Create S3 structure
         try {
             const preferences = getDefaultPreferences();
             await s3Client.send(new PutObjectCommand({
-                Bucket: BUCKET, Key: `${getUserPrefix(pendingUser.username)}/preferences.json`,
+                Bucket: BUCKET, Key: `${getUserPrefix(pendingUser.email)}/preferences.json`,
                 Body: JSON.stringify(preferences), ContentType: 'application/json'
             }));
             for (const folder of ['wallpapers', 'files/Documents', 'files/Pictures', 'files/Videos']) {
                 await s3Client.send(new PutObjectCommand({
-                    Bucket: BUCKET, Key: `${getUserPrefix(pendingUser.username)}/${folder}/.keep`,
+                    Bucket: BUCKET, Key: `${getUserPrefix(pendingUser.email)}/${folder}/.keep`,
                     Body: '', ContentType: 'text/plain'
                 }));
             }
@@ -287,7 +282,8 @@ app.post('/api/auth/resend-verification', async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ error: 'Email is required' });
 
-        const result = await pool.query('SELECT * FROM pending_users WHERE email = $1', [email]);
+        const emailLower = email.toLowerCase().trim();
+        const result = await pool.query('SELECT * FROM pending_users WHERE email = $1', [emailLower]);
         if (result.rows.length === 0) return res.status(404).json({ error: 'No pending registration found' });
 
         const pendingUser = result.rows[0];
@@ -299,7 +295,7 @@ app.post('/api/auth/resend-verification', async (req, res) => {
             [newToken, expiresAt, pendingUser.id]
         );
 
-        await sendVerificationEmail(email, pendingUser.username, newToken);
+        await sendVerificationEmail(emailLower, newToken);
         res.json({ message: 'Verification email sent!' });
     } catch (error) {
         console.error('Resend error:', error);
@@ -307,34 +303,41 @@ app.post('/api/auth/resend-verification', async (req, res) => {
     }
 });
 
-// Login
+// Login - Using email as identifier
 app.post('/api/auth/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
-        if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
+        const { email, password } = req.body;
+        if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+
+        const emailLower = email.toLowerCase().trim();
+        console.log('Login attempt for:', emailLower);
 
         // Check verified users
-        const userResult = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+        const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [emailLower]);
         
         if (userResult.rows.length === 0) {
             // Check if pending
-            const pendingResult = await pool.query('SELECT email FROM pending_users WHERE username = $1', [username]);
+            const pendingResult = await pool.query('SELECT email FROM pending_users WHERE email = $1', [emailLower]);
             if (pendingResult.rows.length > 0) {
-                return res.status(403).json({ error: 'Please verify your email first', requiresVerification: true, email: pendingResult.rows[0].email });
+                return res.status(403).json({ error: 'Please verify your email first', requiresVerification: true, email: emailLower });
             }
-            return res.status(401).json({ error: 'Invalid username or password' });
+            console.log('User not found:', emailLower);
+            return res.status(401).json({ error: 'Invalid email or password' });
         }
 
         const user = userResult.rows[0];
-        const validPassword = await bcrypt.compare(password, user.password_hash);
-        if (!validPassword) return res.status(401).json({ error: 'Invalid username or password' });
-
-        const token = jwt.sign({ username, id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        console.log('User found, checking password...');
         
-        // Update last login
+        const validPassword = await bcrypt.compare(password, user.password_hash);
+        console.log('Password valid:', validPassword);
+        
+        if (!validPassword) return res.status(401).json({ error: 'Invalid email or password' });
+
+        const token = jwt.sign({ email: emailLower, id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        
         await pool.query('UPDATE users SET updated_at = NOW() WHERE id = $1', [user.id]);
         
-        res.json({ message: 'Login successful', token, user: { username: user.username, email: user.email } });
+        res.json({ message: 'Login successful', token, user: { email: user.email } });
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Login failed' });
@@ -347,28 +350,25 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ error: 'Email is required' });
 
-        const result = await pool.query('SELECT id, username, email FROM users WHERE email = $1', [email]);
+        const emailLower = email.toLowerCase().trim();
+        const result = await pool.query('SELECT id, email FROM users WHERE email = $1', [emailLower]);
         
         if (result.rows.length === 0) {
-            // Don't reveal if email exists
             return res.json({ message: 'If an account exists with this email, you will receive a password reset link.' });
         }
 
         const user = result.rows[0];
         const resetToken = generateToken();
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-        // Delete any existing tokens for this user
         await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [user.id]);
-
-        // Insert new token
         await pool.query(
             'INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
             [user.id, resetToken, expiresAt]
         );
 
         try {
-            await sendPasswordResetEmail(email, user.username, resetToken);
+            await sendPasswordResetEmail(emailLower, resetToken);
         } catch (emailError) {
             console.error('Password reset email error:', emailError);
             await pool.query('DELETE FROM password_reset_tokens WHERE token = $1', [resetToken]);
@@ -389,7 +389,7 @@ app.get('/api/auth/verify-reset-token', async (req, res) => {
         if (!token) return res.status(400).json({ valid: false, error: 'Token required' });
 
         const result = await pool.query(
-            `SELECT prt.*, u.username FROM password_reset_tokens prt 
+            `SELECT prt.*, u.email FROM password_reset_tokens prt 
              JOIN users u ON prt.user_id = u.id 
              WHERE prt.token = $1`,
             [token]
@@ -403,7 +403,7 @@ app.get('/api/auth/verify-reset-token', async (req, res) => {
             return res.json({ valid: false, error: 'Reset link has expired' });
         }
 
-        res.json({ valid: true, username: tokenData.username });
+        res.json({ valid: true, email: tokenData.email });
     } catch (error) {
         res.status(500).json({ valid: false, error: 'Verification failed' });
     }
@@ -416,10 +416,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
         if (!token || !password) return res.status(400).json({ error: 'Token and password are required' });
         if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-        const result = await pool.query(
-            'SELECT * FROM password_reset_tokens WHERE token = $1',
-            [token]
-        );
+        const result = await pool.query('SELECT * FROM password_reset_tokens WHERE token = $1', [token]);
 
         if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid or expired reset link' });
         
@@ -429,11 +426,8 @@ app.post('/api/auth/reset-password', async (req, res) => {
             return res.status(400).json({ error: 'Reset link has expired. Please request a new one.' });
         }
 
-        // Update password
         const hashedPassword = await bcrypt.hash(password, 10);
         await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hashedPassword, tokenData.user_id]);
-
-        // Delete token
         await pool.query('DELETE FROM password_reset_tokens WHERE id = $1', [tokenData.id]);
 
         res.json({ message: 'Password reset successful. You can now sign in with your new password.' });
@@ -446,7 +440,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 // ==================== PREFERENCES ROUTES ====================
 app.get('/api/preferences', authenticateToken, async (req, res) => {
     try {
-        const key = `${getUserPrefix(req.user.username)}/preferences.json`;
+        const key = `${getUserPrefix(req.user.email)}/preferences.json`;
         try {
             const response = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
             const body = await response.Body.transformToString();
@@ -463,7 +457,7 @@ app.get('/api/preferences', authenticateToken, async (req, res) => {
 
 app.put('/api/preferences', authenticateToken, async (req, res) => {
     try {
-        const key = `${getUserPrefix(req.user.username)}/preferences.json`;
+        const key = `${getUserPrefix(req.user.email)}/preferences.json`;
         await s3Client.send(new PutObjectCommand({
             Bucket: BUCKET, Key: key, Body: JSON.stringify(req.body), ContentType: 'application/json'
         }));
@@ -478,7 +472,7 @@ app.put('/api/preferences', authenticateToken, async (req, res) => {
 app.get('/api/files', authenticateToken, async (req, res) => {
     try {
         const folder = req.query.folder || '';
-        const prefix = `${getUserPrefix(req.user.username)}/files/${folder}`.replace(/\/+/g, '/');
+        const prefix = `${getUserPrefix(req.user.email)}/files/${folder}`.replace(/\/+/g, '/');
         
         const response = await s3Client.send(new ListObjectsV2Command({
             Bucket: BUCKET, Prefix: prefix, Delimiter: '/'
@@ -511,7 +505,7 @@ app.post('/api/files/upload', authenticateToken, upload.single('file'), async (r
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
         
         const folder = req.body.folder || '';
-        const key = `${getUserPrefix(req.user.username)}/files/${folder}/${req.file.originalname}`.replace(/\/+/g, '/');
+        const key = `${getUserPrefix(req.user.email)}/files/${folder}/${req.file.originalname}`.replace(/\/+/g, '/');
         
         await s3Client.send(new PutObjectCommand({
             Bucket: BUCKET, Key: key, Body: req.file.buffer, ContentType: req.file.mimetype
@@ -527,7 +521,7 @@ app.post('/api/files/upload', authenticateToken, upload.single('file'), async (r
 app.get('/api/files/download', authenticateToken, async (req, res) => {
     try {
         const { key } = req.query;
-        if (!key || !key.startsWith(getUserPrefix(req.user.username))) {
+        if (!key || !key.startsWith(getUserPrefix(req.user.email))) {
             return res.status(403).json({ error: 'Access denied' });
         }
         
@@ -542,7 +536,7 @@ app.get('/api/files/download', authenticateToken, async (req, res) => {
 app.delete('/api/files', authenticateToken, async (req, res) => {
     try {
         const { key } = req.body;
-        if (!key || !key.startsWith(getUserPrefix(req.user.username))) {
+        if (!key || !key.startsWith(getUserPrefix(req.user.email))) {
             return res.status(403).json({ error: 'Access denied' });
         }
         
@@ -557,7 +551,7 @@ app.delete('/api/files', authenticateToken, async (req, res) => {
 app.post('/api/files/folder', authenticateToken, async (req, res) => {
     try {
         const { path: folderPath } = req.body;
-        const key = `${getUserPrefix(req.user.username)}/files/${folderPath}/.keep`.replace(/\/+/g, '/');
+        const key = `${getUserPrefix(req.user.email)}/files/${folderPath}/.keep`.replace(/\/+/g, '/');
         
         await s3Client.send(new PutObjectCommand({
             Bucket: BUCKET, Key: key, Body: '', ContentType: 'text/plain'
@@ -573,7 +567,7 @@ app.post('/api/files/folder', authenticateToken, async (req, res) => {
 // ==================== WALLPAPER ROUTES ====================
 app.get('/api/wallpapers', authenticateToken, async (req, res) => {
     try {
-        const prefix = `${getUserPrefix(req.user.username)}/wallpapers/`;
+        const prefix = `${getUserPrefix(req.user.email)}/wallpapers/`;
         const response = await s3Client.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix }));
         
         const userWallpapers = (response.Contents || [])
@@ -596,7 +590,7 @@ app.post('/api/wallpapers/upload', authenticateToken, upload.single('wallpaper')
     try {
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
         
-        const key = `${getUserPrefix(req.user.username)}/wallpapers/${Date.now()}-${req.file.originalname}`;
+        const key = `${getUserPrefix(req.user.email)}/wallpapers/${Date.now()}-${req.file.originalname}`;
         await s3Client.send(new PutObjectCommand({
             Bucket: BUCKET, Key: key, Body: req.file.buffer, ContentType: req.file.mimetype
         }));
@@ -612,7 +606,7 @@ app.post('/api/wallpapers/upload', authenticateToken, upload.single('wallpaper')
 app.get('/api/wallpapers/url', authenticateToken, async (req, res) => {
     try {
         const key = req.query.key;
-        if (!key.startsWith(getUserPrefix(req.user.username))) {
+        if (!key || !key.startsWith(getUserPrefix(req.user.email))) {
             return res.status(403).json({ error: 'Access denied' });
         }
         const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 86400 });

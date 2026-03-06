@@ -433,13 +433,13 @@ class DesktopOS {
     }
 
     async handleLogin() {
-        const username = document.getElementById("username").value;
+        const email = document.getElementById("username").value.trim();
         const password = document.getElementById("password").value;
         const errorDiv = document.getElementById("login-error");
         const loginBtn = document.querySelector(".login-btn");
 
-        if (!username || !password) {
-            errorDiv.textContent = "Please enter username and password";
+        if (!email || !password) {
+            errorDiv.textContent = "Please enter email and password";
             return;
         }
 
@@ -449,7 +449,7 @@ class DesktopOS {
         try {
             const response = await this.api('/auth/login', {
                 method: 'POST',
-                body: JSON.stringify({ username, password })
+                body: JSON.stringify({ email, password })
             });
 
             this.token = response.token;
