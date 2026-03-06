@@ -227,6 +227,27 @@ class DesktopOS {
             document.querySelector('[data-tab="login"]').classList.add("active");
         });
 
+        // Forgot password handlers
+        document.getElementById("forgot-password-link").addEventListener("click", () => {
+            document.getElementById("login-form").classList.add("hidden");
+            document.getElementById("forgot-password-form").classList.remove("hidden");
+            document.querySelectorAll(".auth-tab").forEach(t => t.classList.remove("active"));
+        });
+
+        document.getElementById("back-to-login-from-forgot").addEventListener("click", () => {
+            document.getElementById("forgot-password-form").classList.add("hidden");
+            document.getElementById("login-form").classList.remove("hidden");
+            document.querySelectorAll(".auth-tab").forEach(t => t.classList.remove("active"));
+            document.querySelector('[data-tab="login"]').classList.add("active");
+            document.getElementById("forgot-error").textContent = "";
+            document.getElementById("forgot-success").classList.add("hidden");
+        });
+
+        document.getElementById("forgot-password-form").addEventListener("submit", (e) => {
+            e.preventDefault();
+            this.handleForgotPassword();
+        });
+
         // Handle URL params for verification result
         this.handleVerificationResult();
 
@@ -623,6 +644,54 @@ class DesktopOS {
             `;
             loginContainer.insertBefore(alert, loginContainer.querySelector('.auth-tabs'));
             setTimeout(() => alert.remove(), 8000);
+        }
+    }
+
+    async handleForgotPassword() {
+        const email = document.getElementById("forgot-email").value.trim();
+        const errorDiv = document.getElementById("forgot-error");
+        const successDiv = document.getElementById("forgot-success");
+        const submitBtn = document.querySelector("#forgot-password-form .login-btn");
+
+        errorDiv.textContent = "";
+        successDiv.classList.add("hidden");
+
+        if (!email) {
+            errorDiv.textContent = "Please enter your email address";
+            return;
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            errorDiv.textContent = "Please enter a valid email address";
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span>Sending...</span>';
+
+        try {
+            const response = await fetch("https://desktop.chacha.live/api/auth/forgot-password", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "Failed to send reset email");
+            }
+
+            // Show success message
+            successDiv.textContent = "If an account exists with this email, you'll receive a password reset link shortly.";
+            successDiv.classList.remove("hidden");
+            document.getElementById("forgot-email").value = "";
+        } catch (error) {
+            errorDiv.textContent = error.message || "Failed to send reset email";
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Send Reset Link</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>';
         }
     }
 

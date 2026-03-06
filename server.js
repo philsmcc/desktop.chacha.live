@@ -56,6 +56,7 @@ const APP_URL = process.env.APP_URL || 'https://desktop.chacha.live';
 const users = new Map();
 const verificationTokens = new Map();
 const pendingUsers = new Map();
+const passwordResetTokens = new Map();
 
 // Default wallpapers
 const defaultWallpapers = [
@@ -320,6 +321,102 @@ app.post('/api/auth/login', async (req, res) => {
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// Forgot Password - Request reset
+app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+
+        // Find user by email
+        const user = Array.from(users.values()).find(u => u.email === email);
+        if (!user) {
+            // Don't reveal if email exists - always show success
+            return res.json({ message: 'If an account exists with this email, you will receive a password reset link.' });
+        }
+
+        // Generate reset token
+        const resetToken = generateVerificationToken();
+        const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        // Remove any existing reset token for this user
+        for (const [token, data] of passwordResetTokens.entries()) {
+            if (data.username === user.username) {
+                passwordResetTokens.delete(token);
+            }
+        }
+
+        passwordResetTokens.set(resetToken, { 
+            username: user.username, 
+            email: user.email, 
+            expires 
+        });
+
+        try {
+            await sendPasswordResetEmail(email, user.username, resetToken);
+        } catch (emailError) {
+            console.error('Password reset email error:', emailError);
+            passwordResetTokens.delete(resetToken);
+            return res.status(500).json({ error: 'Failed to send reset email. Please try again.' });
+        }
+
+        res.json({ message: 'If an account exists with this email, you will receive a password reset link.' });
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({ error: 'Failed to process request' });
+    }
+});
+
+// Reset Password - Set new password
+app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+        const { token, password } = req.body;
+        if (!token || !password) return res.status(400).json({ error: 'Token and password are required' });
+        if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+        const tokenData = passwordResetTokens.get(token);
+        if (!tokenData) return res.status(400).json({ error: 'Invalid or expired reset link' });
+        if (new Date() > tokenData.expires) {
+            passwordResetTokens.delete(token);
+            return res.status(400).json({ error: 'Reset link has expired. Please request a new one.' });
+        }
+
+        const user = users.get(tokenData.username);
+        if (!user) return res.status(400).json({ error: 'User not found' });
+
+        // Update password
+        const hashedPassword = await bcrypt.hash(password, 10);
+        user.password = hashedPassword;
+        users.set(tokenData.username, user);
+
+        // Remove used token
+        passwordResetTokens.delete(token);
+
+        res.json({ message: 'Password reset successful. You can now sign in with your new password.' });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(500).json({ error: 'Failed to reset password' });
+    }
+});
+
+// Verify reset token (check if valid before showing form)
+app.get('/api/auth/verify-reset-token', async (req, res) => {
+    try {
+        const { token } = req.query;
+        if (!token) return res.status(400).json({ valid: false, error: 'Token required' });
+
+        const tokenData = passwordResetTokens.get(token);
+        if (!tokenData) return res.json({ valid: false, error: 'Invalid reset link' });
+        if (new Date() > tokenData.expires) {
+            passwordResetTokens.delete(token);
+            return res.json({ valid: false, error: 'Reset link has expired' });
+        }
+
+        res.json({ valid: true, username: tokenData.username });
+    } catch (error) {
+        res.status(500).json({ valid: false, error: 'Verification failed' });
     }
 });
 
