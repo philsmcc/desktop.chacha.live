@@ -627,17 +627,60 @@ app.post('/api/files/move', authenticateToken, async (req, res) => {
         const fileName = sourceKey.split('/').pop();
         const destKey = `${userPrefix}/files/${destinationFolder}/${fileName}`.replace(/\/+/g, '/');
         
+        // Don't move if source and destination are the same
+        if (sourceKey === destKey) {
+            return res.json({ message: 'File already in destination', newKey: destKey });
+        }
+        
         console.log('Moving file from:', sourceKey, 'to:', destKey);
         
-        // Copy the file to new location
+        // First try to find the exact file - if character encoding issues, search for similar file
+        let actualSourceKey = sourceKey;
+        try {
+            // List files in source folder to find exact match
+            const sourceFolder = sourceKey.substring(0, sourceKey.lastIndexOf('/') + 1);
+            const targetFileName = fileName;
+            
+            const listResult = await s3Client.send(new ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: sourceFolder
+            }));
+            
+            // Find matching file (handle Unicode normalization issues)
+            // Replace various whitespace characters with regular space for comparison
+            // Also handle double-encoded UTF-8 characters (â¯ = corrupted \u202F)
+            const normalizeStr = (s) => {
+                return s.normalize('NFC')
+                    .replace(/\u202F/g, ' ')   // narrow no-break space
+                    .replace(/\u00A0/g, ' ')   // non-breaking space
+                    .replace(/\u2009/g, ' ')   // thin space
+                    .replace(/\u200B/g, '')    // zero-width space
+                    .replace(/\uFEFF/g, '')    // BOM
+                    .replace(/\u00E2\u0080\u00AF/g, ' ')  // double-encoded narrow no-break space (â¯)
+                    .replace(/\s+/g, ' ');     // collapse multiple spaces
+            };
+            
+            const matchingFile = listResult.Contents?.find(obj => {
+                const objName = obj.Key.split('/').pop();
+                return normalizeStr(objName) === normalizeStr(targetFileName);
+            });
+            
+            if (matchingFile) {
+                actualSourceKey = matchingFile.Key;
+            }
+        } catch (listErr) {
+            // If listing fails, continue with provided key
+        }
+        
+        // Copy the file to new location - CopySource must be URL-encoded
         await s3Client.send(new CopyObjectCommand({
             Bucket: BUCKET,
-            CopySource: `${BUCKET}/${sourceKey}`,
+            CopySource: encodeURIComponent(`${BUCKET}/${actualSourceKey}`),
             Key: destKey
         }));
         
         // Delete the original
-        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: sourceKey }));
+        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: actualSourceKey }));
         
         res.json({ message: 'File moved', newKey: destKey });
     } catch (error) {
