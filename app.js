@@ -717,8 +717,56 @@ class DesktopOS {
         this.renderTaskbar();
         this.renderDesktopIcons();
         this.applyWallpaper();
+        this.setupDesktopDropZone();
         
         setTimeout(() => this.openApp("welcome"), 300);
+    }
+    
+    setupDesktopDropZone() {
+        const desktop = document.getElementById("desktop-icons");
+        
+        desktop.addEventListener('dragover', (e) => {
+            // Check if it's a file from the Files app
+            if (e.dataTransfer.types.includes('application/hovercam-file')) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                desktop.classList.add('drop-target');
+            }
+        });
+        
+        desktop.addEventListener('dragleave', (e) => {
+            if (!desktop.contains(e.relatedTarget)) {
+                desktop.classList.remove('drop-target');
+            }
+        });
+        
+        desktop.addEventListener('drop', async (e) => {
+            desktop.classList.remove('drop-target');
+            
+            const hovercamFile = e.dataTransfer.getData('application/hovercam-file');
+            if (hovercamFile) {
+                e.preventDefault();
+                try {
+                    const fileData = JSON.parse(hovercamFile);
+                    
+                    // Only move if not already on desktop
+                    if (fileData.source !== 'desktop') {
+                        const response = await this.api('/files/move', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                sourceKey: fileData.key,
+                                destinationFolder: 'Desktop'
+                            })
+                        });
+                        
+                        // Refresh desktop icons
+                        await this.renderDesktopIcons();
+                    }
+                } catch (err) {
+                    console.error('Failed to move file to desktop:', err);
+                }
+            }
+        });
     }
 
     renderTaskbar() {
@@ -831,6 +879,22 @@ class DesktopOS {
                 
                 container.appendChild(icon);
                 this.makeIconDraggable(icon, 'file_' + item.name);
+                
+                // Make draggable for file transfers
+                icon.setAttribute('draggable', 'true');
+                icon.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('application/hovercam-file', JSON.stringify({
+                        key: item.key,
+                        name: item.name,
+                        type: item.type,
+                        source: 'desktop'
+                    }));
+                    e.dataTransfer.effectAllowed = 'move';
+                    icon.classList.add('dragging-file');
+                });
+                icon.addEventListener('dragend', () => {
+                    icon.classList.remove('dragging-file');
+                });
                 
                 // Double-click to open file
                 icon.addEventListener("dblclick", async (e) => {
@@ -3393,6 +3457,7 @@ class DesktopOS {
                         // Use pre-fetched signed URL (must be synchronous)
                         const signedUrl = item.dataset.signedUrl;
                         const fileName = item.dataset.name;
+                        const filePath = item.dataset.path;
                         
                         if (signedUrl) {
                             e.dataTransfer.setData('text/plain', signedUrl);
@@ -3400,7 +3465,15 @@ class DesktopOS {
                                 name: fileName,
                                 url: signedUrl
                             }));
-                            e.dataTransfer.effectAllowed = 'copy';
+                            // Also set file move data
+                            e.dataTransfer.setData('application/hovercam-file', JSON.stringify({
+                                key: filePath,
+                                name: fileName,
+                                type: 'image',
+                                source: 'files',
+                                sourceFolder: currentPath
+                            }));
+                            e.dataTransfer.effectAllowed = 'copyMove';
                             item.classList.add('dragging');
                         } else {
                             // URL not ready yet - show message
@@ -3571,7 +3644,36 @@ class DesktopOS {
             e.preventDefault();
             filesDropzone.classList.remove('active');
             
-            // Check for camera snapshot first
+            // Check for file move from desktop or another folder
+            const hovercamFile = e.dataTransfer.getData('application/hovercam-file');
+            if (hovercamFile) {
+                try {
+                    const fileData = JSON.parse(hovercamFile);
+                    statusText.textContent = 'Moving: ' + fileData.name;
+                    
+                    const response = await self.api('/files/move', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            sourceKey: fileData.key,
+                            destinationFolder: currentPath
+                        })
+                    });
+                    
+                    statusText.textContent = 'Moved: ' + fileData.name;
+                    await loadFiles();
+                    
+                    // Refresh desktop if file came from there
+                    if (fileData.source === 'desktop') {
+                        await self.renderDesktopIcons();
+                    }
+                } catch (err) {
+                    console.error('Failed to move file:', err);
+                    statusText.textContent = 'Failed to move file';
+                }
+                return;
+            }
+            
+            // Check for camera snapshot
             const dataUrl = e.dataTransfer.getData('application/x-camera-snapshot') ||
                            e.dataTransfer.getData('text/uri-list') ||
                            e.dataTransfer.getData('text/plain');
@@ -3586,7 +3688,6 @@ class DesktopOS {
                     handleFileUpload([file]);
                 } catch (err) {
                     console.error('Failed to upload camera snapshot:', err);
-                    this.showNotification('Failed to upload snapshot', 'error');
                 }
                 return;
             }

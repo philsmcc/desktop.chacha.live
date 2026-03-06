@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { Pool } = require('pg');
-const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CopyObjectCommand } = require('@aws-sdk/client-s3');
 const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
@@ -611,6 +611,38 @@ app.delete('/api/files', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Delete error:', error);
         res.status(500).json({ error: 'Failed to delete file' });
+    }
+});
+
+// Move file between folders
+app.post('/api/files/move', authenticateToken, async (req, res) => {
+    try {
+        const { sourceKey, destinationFolder } = req.body;
+        const userPrefix = getUserPrefix(req.user.email);
+        
+        if (!sourceKey || !sourceKey.startsWith(userPrefix)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        const fileName = sourceKey.split('/').pop();
+        const destKey = `${userPrefix}/files/${destinationFolder}/${fileName}`.replace(/\/+/g, '/');
+        
+        console.log('Moving file from:', sourceKey, 'to:', destKey);
+        
+        // Copy the file to new location
+        await s3Client.send(new CopyObjectCommand({
+            Bucket: BUCKET,
+            CopySource: `${BUCKET}/${sourceKey}`,
+            Key: destKey
+        }));
+        
+        // Delete the original
+        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: sourceKey }));
+        
+        res.json({ message: 'File moved', newKey: destKey });
+    } catch (error) {
+        console.error('Move error:', error);
+        res.status(500).json({ error: 'Failed to move file' });
     }
 });
 
