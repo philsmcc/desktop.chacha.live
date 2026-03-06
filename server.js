@@ -735,6 +735,37 @@ app.post('/api/files/folder', authenticateToken, async (req, res) => {
 });
 
 // ==================== WALLPAPER ROUTES ====================
+
+// System wallpapers (available to all users)
+app.get('/api/wallpapers/system', authenticateToken, async (req, res) => {
+    try {
+        const response = await s3Client.send(new ListObjectsV2Command({ 
+            Bucket: BUCKET, 
+            Prefix: 'system/wallpapers/' 
+        }));
+        
+        const wallpapers = await Promise.all(
+            (response.Contents || [])
+                .filter(obj => !obj.Key.endsWith('/') && !obj.Key.endsWith('.keep'))
+                .map(async (obj) => {
+                    const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: obj.Key }), { expiresIn: 86400 });
+                    const name = obj.Key.split('/').pop().replace(/\.[^.]+$/, '').replace(/-/g, ' ');
+                    return {
+                        id: obj.Key,
+                        name: name.charAt(0).toUpperCase() + name.slice(1),
+                        url: url,
+                        key: obj.Key
+                    };
+                })
+        );
+        
+        res.json(wallpapers);
+    } catch (error) {
+        console.error('System wallpapers error:', error);
+        res.status(500).json({ error: 'Failed to get system wallpapers' });
+    }
+});
+
 app.get('/api/wallpapers', authenticateToken, async (req, res) => {
     try {
         const prefix = `${getUserPrefix(req.user.email)}/wallpapers/`;
@@ -753,6 +784,34 @@ app.get('/api/wallpapers', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Wallpapers error:', error);
         res.status(500).json({ error: 'Failed to get wallpapers' });
+    }
+});
+
+// User wallpapers with signed URLs
+app.get('/api/wallpapers/user', authenticateToken, async (req, res) => {
+    try {
+        const prefix = `${getUserPrefix(req.user.email)}/wallpapers/`;
+        const response = await s3Client.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix }));
+        
+        const wallpapers = await Promise.all(
+            (response.Contents || [])
+                .filter(obj => !obj.Key.endsWith('/.keep') && !obj.Key.endsWith('/'))
+                .map(async (obj) => {
+                    const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: obj.Key }), { expiresIn: 86400 });
+                    return {
+                        id: obj.Key,
+                        name: obj.Key.split('/').pop(),
+                        key: obj.Key,
+                        url: url,
+                        isCustom: true
+                    };
+                })
+        );
+
+        res.json(wallpapers);
+    } catch (error) {
+        console.error('User wallpapers error:', error);
+        res.status(500).json({ error: 'Failed to get user wallpapers' });
     }
 });
 
@@ -776,7 +835,8 @@ app.post('/api/wallpapers/upload', authenticateToken, upload.single('wallpaper')
 app.get('/api/wallpapers/url', authenticateToken, async (req, res) => {
     try {
         const key = req.query.key;
-        if (!key || !key.startsWith(getUserPrefix(req.user.email))) {
+        // Allow access to user's own wallpapers OR system wallpapers
+        if (!key || (!key.startsWith(getUserPrefix(req.user.email)) && !key.startsWith('system/wallpapers/'))) {
             return res.status(403).json({ error: 'Access denied' });
         }
         const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 86400 });

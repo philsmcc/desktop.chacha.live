@@ -1351,7 +1351,7 @@ class DesktopOS {
             if (!response.ok) throw new Error('Upload failed');
 
             const data = await response.json();
-            this.setWallpaper('image', data.wallpaper.url);
+            this.setWallpaper('image', data.url);
             
             // Refresh user wallpapers
             await this.loadUserWallpapers();
