@@ -328,6 +328,7 @@ app.post('/api/auth/login', async (req, res) => {
         const user = userResult.rows[0];
         console.log('User found, checking password...');
         
+        console.log('Stored hash:', user.password_hash.substring(0, 30) + '...');
         const validPassword = await bcrypt.compare(password, user.password_hash);
         console.log('Password valid:', validPassword);
         
@@ -427,7 +428,12 @@ app.post('/api/auth/reset-password', async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hashedPassword, tokenData.user_id]);
+        console.log('Resetting password for user_id:', tokenData.user_id);
+        console.log('New hash:', hashedPassword.substring(0, 30) + '...');
+        
+        const updateResult = await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2 RETURNING id, email', [hashedPassword, tokenData.user_id]);
+        console.log('Update result:', updateResult.rows);
+        
         await pool.query('DELETE FROM password_reset_tokens WHERE id = $1', [tokenData.id]);
 
         res.json({ message: 'Password reset successful. You can now sign in with your new password.' });
