@@ -3437,7 +3437,10 @@ class DesktopOS {
                         if (!response.ok) throw new Error('Upload failed');
                         
                         statusText.textContent = 'Uploaded: ' + file.name;
-                        loadFiles();
+                        // Small delay to ensure S3 consistency, then reload
+                        await new Promise(r => setTimeout(r, 500));
+                        await loadFiles();
+                        self.showNotification('File uploaded: ' + file.name, 'success');
                     } catch (error) {
                         console.error('Upload failed:', error);
                         statusText.textContent = 'Failed to upload: ' + file.name;
