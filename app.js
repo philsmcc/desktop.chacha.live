@@ -3378,7 +3378,7 @@ class DesktopOS {
         const app = windowEl.querySelector('.camera-app');
         if (!app) return;
         
-        const video = app.querySelector('.camera-video');
+        let video = app.querySelector('.camera-video');
         const canvas = app.querySelector('.camera-canvas');
         const optionsBtn = app.querySelector('.camera-options-btn');
         const optionsMenu = app.querySelector('.camera-options-menu');
@@ -3630,7 +3630,7 @@ class DesktopOS {
                 
                 resolutionBadge.textContent = 'Error';
                 resolutionBadge.style.color = '#ef4444';
-                self.showNotification('Camera error: ' + err.message, 'error');
+                if (self && self.showNotification) self.showNotification('Camera error: ' + err.message, 'error');
             }
         };
         
