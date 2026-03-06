@@ -3395,13 +3395,24 @@ class DesktopOS {
         let frozen = false;
         let currentDeviceId = null;
         let currentResolution = '1080';
+        let isStarting = false;
         
-        // Resolution presets
+        // Resolution presets - use exact constraints for reliability
         const resolutions = {
             '4k': { width: 3840, height: 2160, label: '4K' },
             '1080': { width: 1920, height: 1080, label: '1080p' },
             '720': { width: 1280, height: 720, label: '720p' },
-            'auto': { width: { ideal: 4096 }, height: { ideal: 2160 }, label: 'Auto' }
+            'auto': { width: 4096, height: 2160, label: 'Auto' }
+        };
+        
+        // Show loading state
+        const showLoading = (show) => {
+            if (show) {
+                resolutionBadge.textContent = 'Loading...';
+                resolutionBadge.style.color = '#fbbf24';
+            } else {
+                resolutionBadge.style.color = '#4ade80';
+            }
         };
         
         const updateResolutionBadge = () => {
@@ -3413,12 +3424,17 @@ class DesktopOS {
                 else if (w >= 1280) label = '720p';
                 else label = h + 'p';
                 resolutionBadge.textContent = label;
+                resolutionBadge.style.color = '#4ade80';
             }
         };
         
         const loadCameraSources = async () => {
             try {
-                await navigator.mediaDevices.getUserMedia({ video: true });
+                // First get permission with minimal constraints
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                tempStream.getTracks().forEach(t => t.stop());
+                
+                // Now enumerate devices
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(d => d.kind === 'videoinput');
                 
@@ -3430,44 +3446,190 @@ class DesktopOS {
                     sourceSelect.appendChild(opt);
                 });
                 
-                return videoDevices[0]?.deviceId;
+                // Return first device ID, preferring external cameras
+                const externalCamera = videoDevices.find(d => 
+                    d.label.toLowerCase().includes('hovercam') || 
+                    d.label.toLowerCase().includes('solo') ||
+                    d.label.toLowerCase().includes('usb') ||
+                    d.label.toLowerCase().includes('document')
+                );
+                
+                return externalCamera?.deviceId || videoDevices[0]?.deviceId;
             } catch (err) {
+                console.error('Camera enumeration error:', err);
                 sourceSelect.innerHTML = '<option>No camera access</option>';
                 return null;
             }
         };
         
-        const startCamera = async (deviceId, resolution = currentResolution) => {
-            if (stream) stream.getTracks().forEach(t => t.stop());
+        const stopCurrentStream = () => {
+            if (stream) {
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                });
+                stream = null;
+            }
+            video.srcObject = null;
+        };
+        
+        const startCamera = async (deviceId, resolution = currentResolution, retryCount = 0) => {
+            if (isStarting) {
+                console.log('Camera already starting, queuing request...');
+                // Queue the request
+                setTimeout(() => startCamera(deviceId, resolution, 0), 500);
+                return;
+            }
+            isStarting = true;
+            
+            // Stop any existing stream completely
+            stopCurrentStream();
             frozen = false;
             updateFreezeButton(false);
+            showLoading(true);
+            
+            // Longer delay to ensure hardware is fully released
+            await new Promise(resolve => setTimeout(resolve, 300));
             
             try {
                 const res = resolutions[resolution] || resolutions['1080'];
+                
+                // Build constraints with EXACT values for more reliable switching
                 const constraints = { 
                     video: { 
-                        width: typeof res.width === 'object' ? res.width : { ideal: res.width },
-                        height: typeof res.height === 'object' ? res.height : { ideal: res.height }
-                    } 
+                        width: { exact: res.width },
+                        height: { exact: res.height }
+                    },
+                    audio: false
                 };
-                if (deviceId) constraints.video.deviceId = { exact: deviceId };
                 
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = stream;
-                await video.play();
+                if (deviceId) {
+                    constraints.video.deviceId = { exact: deviceId };
+                }
                 
+                console.log('Starting camera with constraints:', JSON.stringify(constraints));
+                
+                // Try exact constraints first
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
+                } catch (exactErr) {
+                    console.log('Exact resolution not supported, trying ideal:', exactErr.message);
+                    // Fallback to ideal constraints
+                    const idealConstraints = {
+                        video: {
+                            width: { ideal: res.width },
+                            height: { ideal: res.height },
+                            deviceId: deviceId ? { exact: deviceId } : undefined
+                        },
+                        audio: false
+                    };
+                    stream = await navigator.mediaDevices.getUserMedia(idealConstraints);
+                }
+                
+                // Verify we got a stream
+                const videoTrack = stream.getVideoTracks()[0];
+                if (!videoTrack) {
+                    throw new Error('No video track obtained');
+                }
+                
+                // Log actual settings
+                const settings = videoTrack.getSettings();
+                console.log('Camera started with actual settings:', settings.width + 'x' + settings.height);
+                
+                // Check if we got the resolution we asked for
+                if (resolution !== 'auto' && (settings.width !== res.width || settings.height !== res.height)) {
+                    console.log('Requested ' + res.width + 'x' + res.height + ' but got ' + settings.width + 'x' + settings.height);
+                }
+                
+                // Create fresh video element to avoid browser caching
+                const newVideo = document.createElement('video');
+                newVideo.autoplay = true;
+                newVideo.playsInline = true;
+                newVideo.muted = true;
+                newVideo.className = video.className;
+                newVideo.style.cssText = video.style.cssText;
+                newVideo.draggable = true;
+                
+                // Set stream on new video
+                newVideo.srcObject = stream;
+                
+                // Wait for metadata
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        // Don't reject, just resolve - video might still work
+                        console.log('Video metadata timeout, continuing...');
+                        resolve();
+                    }, 3000);
+                    
+                    newVideo.onloadedmetadata = () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    };
+                });
+                
+                // Play the video
+                try {
+                    await newVideo.play();
+                } catch (playErr) {
+                    console.log('Auto-play blocked, user interaction needed:', playErr.message);
+                }
+                
+                // Replace old video element with new one
+                video.replaceWith(newVideo);
+                video = newVideo;
+                
+                // Re-attach drag listener
+                video.addEventListener('dragstart', (e) => {
+                    const dataUrl = captureSnapshot();
+                    if (dataUrl) {
+                        e.dataTransfer.setData('text/uri-list', dataUrl);
+                        e.dataTransfer.setData('application/x-camera-snapshot', dataUrl);
+                    }
+                });
+                
+                // Update state
                 currentDeviceId = deviceId;
                 currentResolution = resolution;
                 
-                // Update badge after video loads metadata
-                video.onloadedmetadata = () => {
+                // Update UI immediately and again after delay
+                updateResolutionBadge();
+                setTimeout(() => {
                     updateResolutionBadge();
-                    // Try to apply focus mode
                     applyFocusMode(focusSelect.value);
-                };
+                }, 500);
+                
+                isStarting = false;
                 
             } catch (err) {
                 console.error('Camera error:', err);
+                isStarting = false;
+                showLoading(false);
+                
+                // Retry logic for transient failures
+                if (retryCount < 2) {
+                    console.log('Retrying camera start, attempt', retryCount + 2);
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    return startCamera(deviceId, resolution, retryCount + 1);
+                }
+                
+                // If resolution failed, try lower resolution
+                if (retryCount === 2) {
+                    if (resolution === '4k') {
+                        console.log('4K not supported, trying 1080p');
+                        resolutionSelect.value = '1080';
+                        return startCamera(deviceId, '1080', 0);
+                    } else if (resolution === '1080') {
+                        console.log('1080p not supported, trying 720p');
+                        resolutionSelect.value = '720';
+                        return startCamera(deviceId, '720', 0);
+                    } else if (resolution !== 'auto') {
+                        console.log('Falling back to auto resolution');
+                        resolutionSelect.value = 'auto';
+                        return startCamera(deviceId, 'auto', 0);
+                    }
+                }
+                
+                resolutionBadge.textContent = 'Error';
+                resolutionBadge.style.color = '#ef4444';
                 self.showNotification('Camera error: ' + err.message, 'error');
             }
         };
@@ -3489,7 +3651,7 @@ class DesktopOS {
                     }
                 }
             } catch (err) {
-                console.log('Focus mode not supported');
+                console.log('Focus mode not supported:', err.message);
             }
         };
         
@@ -3518,6 +3680,8 @@ class DesktopOS {
         
         const captureSnapshot = () => {
             if (!stream && !frozen) return null;
+            if (!video.videoWidth || !video.videoHeight) return null;
+            
             const ctx = canvas.getContext('2d');
             const vw = video.videoWidth, vh = video.videoHeight;
             
@@ -3538,11 +3702,7 @@ class DesktopOS {
                 ctx.scale(-1, 1);
             }
             
-            if (rotation === 90 || rotation === 270) {
-                ctx.drawImage(video, -vw / 2, -vh / 2);
-            } else {
-                ctx.drawImage(video, -vw / 2, -vh / 2);
-            }
+            ctx.drawImage(video, -vw / 2, -vh / 2);
             ctx.restore();
             
             return canvas.toDataURL('image/jpeg', 0.95);
@@ -3557,11 +3717,15 @@ class DesktopOS {
         app.addEventListener('click', () => optionsMenu.classList.add('hidden'));
         optionsMenu.addEventListener('click', (e) => e.stopPropagation());
         
-        // Source change
-        sourceSelect.addEventListener('change', (e) => startCamera(e.target.value, currentResolution));
+        // Source change - fully restart camera
+        sourceSelect.addEventListener('change', (e) => {
+            console.log('Camera source changed to:', e.target.value);
+            startCamera(e.target.value, currentResolution);
+        });
         
-        // Resolution change
+        // Resolution change - fully restart camera
         resolutionSelect.addEventListener('change', (e) => {
+            console.log('Resolution changed to:', e.target.value);
             startCamera(currentDeviceId, e.target.value);
         });
         
@@ -3642,11 +3806,25 @@ class DesktopOS {
         
         // Cleanup
         windowEl.cameraCleanup = () => {
-            if (stream) stream.getTracks().forEach(t => t.stop());
+            stopCurrentStream();
         };
         
-        // Auto-start with 1080p
-        loadCameraSources().then(id => id && startCamera(id, '1080'));
+        // Auto-start with 1080p - with retry logic
+        const initializeCamera = async () => {
+            showLoading(true);
+            const deviceId = await loadCameraSources();
+            if (deviceId) {
+                // Select the device in dropdown
+                sourceSelect.value = deviceId;
+                await startCamera(deviceId, '1080');
+            } else {
+                showLoading(false);
+                resolutionBadge.textContent = 'No Camera';
+                resolutionBadge.style.color = '#ef4444';
+            }
+        };
+        
+        initializeCamera();
     }
 
 
