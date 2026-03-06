@@ -601,12 +601,41 @@ app.get('/api/files/download', authenticateToken, async (req, res) => {
 
 app.delete('/api/files', authenticateToken, async (req, res) => {
     try {
-        const { key } = req.body;
-        if (!key || !key.startsWith(getUserPrefix(req.user.email))) {
+        const { key, path, type } = req.body;
+        const userPrefix = getUserPrefix(req.user.email);
+        
+        // Support both full key and relative path
+        let targetKey;
+        if (key && key.startsWith(userPrefix)) {
+            targetKey = key;
+        } else if (path) {
+            // Build full key from relative path
+            targetKey = `${userPrefix}/files/${path}`.replace(/\/+/g, '/');
+        } else {
             return res.status(403).json({ error: 'Access denied' });
         }
         
-        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+        // Verify the key belongs to this user
+        if (!targetKey.startsWith(userPrefix)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        if (type === 'folder') {
+            // Delete all objects in the folder
+            const listResult = await s3Client.send(new ListObjectsV2Command({
+                Bucket: BUCKET,
+                Prefix: targetKey.endsWith('/') ? targetKey : targetKey + '/'
+            }));
+            
+            if (listResult.Contents && listResult.Contents.length > 0) {
+                for (const obj of listResult.Contents) {
+                    await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: obj.Key }));
+                }
+            }
+        } else {
+            await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: targetKey }));
+        }
+        
         res.json({ message: 'File deleted' });
     } catch (error) {
         console.error('Delete error:', error);
