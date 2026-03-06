@@ -8,6 +8,8 @@ const crypto = require('crypto');
 const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,11 +54,41 @@ const BUCKET = process.env.S3_BUCKET;
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@hovercam.com';
 const APP_URL = process.env.APP_URL || 'https://desktop.chacha.live';
 
-// In-memory stores
-const users = new Map();
+// File-based persistent storage
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const loadData = (filename) => {
+    const filepath = path.join(DATA_DIR, filename);
+    try {
+        if (fs.existsSync(filepath)) {
+            const data = JSON.parse(fs.readFileSync(filepath, 'utf8'));
+            return new Map(Object.entries(data));
+        }
+    } catch (e) { console.error(`Error loading ${filename}:`, e); }
+    return new Map();
+};
+
+const saveData = (filename, map) => {
+    const filepath = path.join(DATA_DIR, filename);
+    try {
+        fs.writeFileSync(filepath, JSON.stringify(Object.fromEntries(map), null, 2));
+    } catch (e) { console.error(`Error saving ${filename}:`, e); }
+};
+
+// Persistent stores (loaded from files)
+const users = loadData('users.json');
+const pendingUsers = loadData('pending_users.json');
+
+// Temporary stores (don't need persistence - tokens expire)
 const verificationTokens = new Map();
-const pendingUsers = new Map();
 const passwordResetTokens = new Map();
+
+// Helper to save users after modifications
+const saveUsers = () => saveData('users.json', users);
+const savePendingUsers = () => saveData('pending_users.json', pendingUsers);
+
+console.log(`Loaded ${users.size} users, ${pendingUsers.size} pending users`);
 
 // Default wallpapers
 const defaultWallpapers = [
@@ -176,6 +208,96 @@ const sendVerificationEmail = async (email, username, token) => {
     await sesClient.send(new SendEmailCommand(params));
 };
 
+// Password reset email template
+const generatePasswordResetEmail = (username, resetUrl) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f7fa;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" style="width: 100%; max-width: 520px; border-collapse: collapse;">
+                    <tr>
+                        <td align="center" style="padding-bottom: 32px;">
+                            <table role="presentation" style="border-collapse: collapse;">
+                                <tr>
+                                    <td style="width: 48px; height: 48px; background: linear-gradient(135deg, #f57c00, #e65100); border-radius: 12px; text-align: center; vertical-align: middle;">
+                                        <span style="color: white; font-size: 24px; font-weight: bold;">H</span>
+                                    </td>
+                                    <td style="padding-left: 12px;">
+                                        <span style="font-size: 24px; font-weight: 700; color: #1a1a2e;">HoverCam</span>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background: #ffffff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);">
+                            <div style="height: 4px; background: linear-gradient(90deg, #f57c00, #ff9800); border-radius: 16px 16px 0 0;"></div>
+                            <div style="padding: 40px;">
+                                <h1 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 600; color: #1a1a2e; text-align: center;">
+                                    Reset Your Password
+                                </h1>
+                                <p style="margin: 0 0 8px 0; font-size: 16px; color: #666; text-align: center; line-height: 1.6;">
+                                    Hi ${username},
+                                </p>
+                                <p style="margin: 0 0 32px 0; font-size: 16px; color: #666; text-align: center; line-height: 1.6;">
+                                    We received a request to reset your password. Click the button below to create a new password.
+                                </p>
+                                <div style="text-align: center; margin-bottom: 32px;">
+                                    <a href="${resetUrl}" style="display: inline-block; padding: 16px 48px; background: linear-gradient(135deg, #f57c00, #e65100); color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 12px;">
+                                        Reset Password
+                                    </a>
+                                </div>
+                                <p style="margin: 0 0 16px 0; font-size: 14px; color: #888; text-align: center;">
+                                    Or copy and paste this link in your browser:
+                                </p>
+                                <div style="background: #f8f9fa; border-radius: 8px; padding: 12px 16px; word-break: break-all;">
+                                    <a href="${resetUrl}" style="font-size: 13px; color: #f57c00; text-decoration: none;">${resetUrl}</a>
+                                </div>
+                                <p style="margin: 24px 0 0 0; font-size: 13px; color: #999; text-align: center;">
+                                    This link expires in 1 hour
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 32px 20px; text-align: center;">
+                            <p style="margin: 0 0 8px 0; font-size: 13px; color: #888;">
+                                Didn't request a password reset? You can safely ignore this email.
+                            </p>
+                            <p style="margin: 0; font-size: 12px; color: #aaa;">
+                                HoverCam Desktop
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`;
+
+const sendPasswordResetEmail = async (email, username, token) => {
+    const resetUrl = `${APP_URL}/reset-password.html?token=${token}`;
+    const params = {
+        Source: FROM_EMAIL,
+        Destination: { ToAddresses: [email] },
+        Message: {
+            Subject: { Data: 'Reset your HoverCam Desktop password', Charset: 'UTF-8' },
+            Body: {
+                Html: { Data: generatePasswordResetEmail(username, resetUrl), Charset: 'UTF-8' },
+                Text: { Data: `Hi ${username},\n\nReset your password: ${resetUrl}\n\nThis link expires in 1 hour.`, Charset: 'UTF-8' }
+            }
+        }
+    };
+    await sesClient.send(new SendEmailCommand(params));
+};
+
 // ==================== AUTH ROUTES ====================
 
 // Register with email verification
@@ -205,6 +327,7 @@ app.post('/api/auth/register', async (req, res) => {
         const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
         pendingUsers.set(username, { username, email, password: hashedPassword, verificationToken, createdAt: new Date().toISOString() });
+        savePendingUsers();
         verificationTokens.set(verificationToken, { username, email, expires });
 
         try {
@@ -212,6 +335,7 @@ app.post('/api/auth/register', async (req, res) => {
         } catch (emailError) {
             console.error('Email error:', emailError);
             pendingUsers.delete(username);
+            savePendingUsers();
             verificationTokens.delete(verificationToken);
             return res.status(500).json({ error: 'Failed to send verification email. Please try again.' });
         }
@@ -248,8 +372,10 @@ app.get('/api/auth/verify', async (req, res) => {
             createdAt: pendingUser.createdAt,
             verifiedAt: new Date().toISOString()
         });
+        saveUsers();
 
         pendingUsers.delete(tokenData.username);
+        savePendingUsers();
         verificationTokens.delete(token);
 
         // Create S3 structure
@@ -288,6 +414,7 @@ app.post('/api/auth/resend-verification', async (req, res) => {
         const newToken = generateVerificationToken();
         pendingUser.verificationToken = newToken;
         pendingUsers.set(pendingUser.username, pendingUser);
+        savePendingUsers();
         verificationTokens.set(newToken, { username: pendingUser.username, email, expires: new Date(Date.now() + 24 * 60 * 60 * 1000) });
 
         await sendVerificationEmail(email, pendingUser.username, newToken);
@@ -390,6 +517,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         user.password = hashedPassword;
         users.set(tokenData.username, user);
+        saveUsers();
 
         // Remove used token
         passwordResetTokens.delete(token);
