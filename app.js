@@ -303,22 +303,8 @@ class DesktopOS {
     }
     
     createDesktopSnapshot(dataUrl, x, y) {
-        // Convert data URL to blob and trigger download
-        fetch(dataUrl)
-            .then(res => res.blob())
-            .then(blob => {
-                const filename = `snapshot-${Date.now()}.jpg`;
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = filename;
-                link.click();
-                URL.revokeObjectURL(link.href);
-                this.showNotification(`Saved: ${filename}`, 'success');
-            })
-            .catch(err => {
-                console.error('Failed to save snapshot:', err);
-                this.showNotification('Failed to save snapshot', 'error');
-            });
+        // Upload snapshot to Desktop folder in S3
+        this.uploadSnapshotToDesktop(dataUrl);
     }
 
     bindFullscreenEvents() {
@@ -724,12 +710,15 @@ class DesktopOS {
     
     setupDesktopDropZone() {
         const desktop = document.getElementById("desktop-icons");
+        const self = this;
         
         desktop.addEventListener('dragover', (e) => {
-            // Check if it's a file from the Files app
-            if (e.dataTransfer.types.includes('application/hovercam-file')) {
+            // Check if it's a file from the Files app or camera snapshot
+            if (e.dataTransfer.types.includes('application/hovercam-file') ||
+                e.dataTransfer.types.includes('application/x-camera-snapshot') ||
+                e.dataTransfer.types.includes('text/uri-list')) {
                 e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
+                e.dataTransfer.dropEffect = 'copy';
                 desktop.classList.add('drop-target');
             }
         });
@@ -743,6 +732,7 @@ class DesktopOS {
         desktop.addEventListener('drop', async (e) => {
             desktop.classList.remove('drop-target');
             
+            // Handle files from Files app
             const hovercamFile = e.dataTransfer.getData('application/hovercam-file');
             if (hovercamFile) {
                 e.preventDefault();
@@ -765,8 +755,52 @@ class DesktopOS {
                 } catch (err) {
                     console.error('Failed to move file to desktop:', err);
                 }
+                return;
+            }
+            
+            // Handle camera snapshots
+            const dataUrl = e.dataTransfer.getData('application/x-camera-snapshot') ||
+                           e.dataTransfer.getData('text/uri-list') ||
+                           e.dataTransfer.getData('text/plain');
+            
+            if (dataUrl && dataUrl.startsWith('data:image')) {
+                e.preventDefault();
+                await self.uploadSnapshotToDesktop(dataUrl);
             }
         });
+    }
+    
+    async uploadSnapshotToDesktop(dataUrl) {
+        try {
+            // Convert data URL to blob
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
+            const filename = 'snapshot-' + Date.now() + '.jpg';
+            
+            // Create FormData for upload
+            const formData = new FormData();
+            formData.append('file', blob, filename);
+            
+            // Upload to Desktop folder
+            const uploadResponse = await fetch('/api/files/upload?folder=Desktop', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + this.token
+                },
+                body: formData
+            });
+            
+            if (!uploadResponse.ok) {
+                throw new Error('Upload failed');
+            }
+            
+            // Refresh desktop icons
+            await this.renderDesktopIcons();
+            this.showNotification('Snapshot saved to Desktop', 'success');
+        } catch (err) {
+            console.error('Failed to save snapshot to desktop:', err);
+            this.showNotification('Failed to save snapshot', 'error');
+        }
     }
 
     renderTaskbar() {
