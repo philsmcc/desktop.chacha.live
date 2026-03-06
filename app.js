@@ -3426,6 +3426,7 @@ class DesktopOS {
                     formData.append('file', file);
                     
                     try {
+                        console.log('Uploading to folder:', currentPath);
                         const response = await fetch('/api/files/upload?folder=' + encodeURIComponent(currentPath), {
                             method: 'POST',
                             headers: {
@@ -3434,13 +3435,17 @@ class DesktopOS {
                             body: formData
                         });
                         
-                        if (!response.ok) throw new Error('Upload failed');
+                        console.log('Upload response status:', response.status);
+                        if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            console.error('Upload error response:', errorData);
+                            throw new Error(errorData.error || 'Upload failed');
+                        }
                         
                         statusText.textContent = 'Uploaded: ' + file.name;
                         // Small delay to ensure S3 consistency, then reload
                         await new Promise(r => setTimeout(r, 500));
                         await loadFiles();
-                        self.showNotification('File uploaded: ' + file.name, 'success');
                     } catch (error) {
                         console.error('Upload failed:', error);
                         statusText.textContent = 'Failed to upload: ' + file.name;
