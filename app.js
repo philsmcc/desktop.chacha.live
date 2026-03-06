@@ -4037,29 +4037,34 @@ class DesktopOS {
         };
         
         // Apply perspective transform to get de-skewed 8.5x11 image
+        // Automatically rotates landscape documents to portrait for maximum pixel utilization
         const applyPerspectiveTransform = (srcMat, corners) => {
             if (typeof cv === 'undefined' || !corners || corners.length !== 4) return null;
             
             try {
-                // Calculate output dimensions maintaining 8.5x11 aspect ratio
-                // Use the larger dimension to determine output size
+                // Calculate document dimensions from corners
                 const width1 = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
                 const width2 = Math.hypot(corners[2].x - corners[3].x, corners[2].y - corners[3].y);
                 const height1 = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
                 const height2 = Math.hypot(corners[2].x - corners[1].x, corners[2].y - corners[1].y);
                 
-                const maxWidth = Math.max(width1, width2);
-                const maxHeight = Math.max(height1, height2);
+                const docWidth = Math.max(width1, width2);
+                const docHeight = Math.max(height1, height2);
                 
-                // Determine if document is portrait or landscape
+                // Check if document is landscape (wider than tall)
+                const isLandscape = docWidth > docHeight;
+                
+                // Always output in portrait orientation (taller than wide)
+                // This maximizes pixel usage when user rotates paper to match camera aspect ratio
                 let outWidth, outHeight;
-                if (maxWidth > maxHeight) {
-                    // Landscape - use 11x8.5
-                    outWidth = Math.round(maxWidth);
-                    outHeight = Math.round(outWidth * (8.5 / 11));
+                if (isLandscape) {
+                    // Document is landscape - we'll rotate it 90° CCW to portrait
+                    // Use the document width (which becomes height after rotation) to determine size
+                    outHeight = Math.round(docWidth);
+                    outWidth = Math.round(outHeight * (8.5 / 11));
                 } else {
-                    // Portrait - use 8.5x11
-                    outHeight = Math.round(maxHeight);
+                    // Document is already portrait
+                    outHeight = Math.round(docHeight);
                     outWidth = Math.round(outHeight * (8.5 / 11));
                 }
                 
@@ -4069,7 +4074,7 @@ class DesktopOS {
                 outWidth += marginX * 2;
                 outHeight += marginY * 2;
                 
-                // Source points (detected corners)
+                // Source points (detected corners: TL, TR, BR, BL)
                 const srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
                     corners[0].x, corners[0].y,
                     corners[1].x, corners[1].y,
@@ -4077,13 +4082,27 @@ class DesktopOS {
                     corners[3].x, corners[3].y
                 ]);
                 
-                // Destination points (rectangle with margin)
-                const dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
-                    marginX, marginY,
-                    outWidth - marginX, marginY,
-                    outWidth - marginX, outHeight - marginY,
-                    marginX, outHeight - marginY
-                ]);
+                // Destination points - if landscape, rotate 90° counter-clockwise
+                // This maps: TL->BL, TR->TL, BR->TR, BL->BR (90° CCW rotation)
+                let dstPoints;
+                if (isLandscape) {
+                    // Rotate 90° CCW: source corners map to rotated positions
+                    // TL(0) -> BL, TR(1) -> TL, BR(2) -> TR, BL(3) -> BR
+                    dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                        marginX, outHeight - marginY,           // TL -> BL
+                        marginX, marginY,                       // TR -> TL  
+                        outWidth - marginX, marginY,            // BR -> TR
+                        outWidth - marginX, outHeight - marginY // BL -> BR
+                    ]);
+                } else {
+                    // No rotation needed - standard mapping
+                    dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                        marginX, marginY,
+                        outWidth - marginX, marginY,
+                        outWidth - marginX, outHeight - marginY,
+                        marginX, outHeight - marginY
+                    ]);
+                }
                 
                 // Get perspective transform matrix
                 const M = cv.getPerspectiveTransform(srcPoints, dstPoints);
