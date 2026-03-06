@@ -3383,9 +3383,38 @@ class DesktopOS {
         const optionsBtn = app.querySelector('.camera-options-btn');
         const optionsMenu = app.querySelector('.camera-options-menu');
         const sourceSelect = app.querySelector('.camera-source-select');
+        const resolutionSelect = app.querySelector('.camera-resolution-select');
+        const focusSelect = app.querySelector('.camera-focus-select');
+        const focusSlider = app.querySelector('.camera-focus-slider');
+        const resolutionBadge = app.querySelector('.camera-resolution-badge');
+        const self = this;
         
         let stream = null;
         let mirrored = false;
+        let rotation = 0;
+        let frozen = false;
+        let currentDeviceId = null;
+        let currentResolution = '1080';
+        
+        // Resolution presets
+        const resolutions = {
+            '4k': { width: 3840, height: 2160, label: '4K' },
+            '1080': { width: 1920, height: 1080, label: '1080p' },
+            '720': { width: 1280, height: 720, label: '720p' },
+            'auto': { width: { ideal: 4096 }, height: { ideal: 2160 }, label: 'Auto' }
+        };
+        
+        const updateResolutionBadge = () => {
+            if (resolutionBadge && video.videoWidth) {
+                const w = video.videoWidth, h = video.videoHeight;
+                let label = w + '×' + h;
+                if (w >= 3840) label = '4K';
+                else if (w >= 1920) label = '1080p';
+                else if (w >= 1280) label = '720p';
+                else label = h + 'p';
+                resolutionBadge.textContent = label;
+            }
+        };
         
         const loadCameraSources = async () => {
             try {
@@ -3397,50 +3426,126 @@ class DesktopOS {
                 videoDevices.forEach((device, i) => {
                     const opt = document.createElement('option');
                     opt.value = device.deviceId;
-                    opt.textContent = device.label || `Camera ${i + 1}`;
+                    opt.textContent = device.label || ('Camera ' + (i + 1));
                     sourceSelect.appendChild(opt);
                 });
                 
                 return videoDevices[0]?.deviceId;
             } catch (err) {
-                sourceSelect.innerHTML = '<option>No access</option>';
+                sourceSelect.innerHTML = '<option>No camera access</option>';
                 return null;
             }
         };
         
-        const startCamera = async (deviceId) => {
+        const startCamera = async (deviceId, resolution = currentResolution) => {
             if (stream) stream.getTracks().forEach(t => t.stop());
+            frozen = false;
+            updateFreezeButton(false);
             
             try {
-                const constraints = { video: { width: { ideal: 1920 }, height: { ideal: 1080 } } };
+                const res = resolutions[resolution] || resolutions['1080'];
+                const constraints = { 
+                    video: { 
+                        width: typeof res.width === 'object' ? res.width : { ideal: res.width },
+                        height: typeof res.height === 'object' ? res.height : { ideal: res.height }
+                    } 
+                };
                 if (deviceId) constraints.video.deviceId = { exact: deviceId };
                 
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
-                video.play();
+                await video.play();
+                
+                currentDeviceId = deviceId;
+                currentResolution = resolution;
+                
+                // Update badge after video loads metadata
+                video.onloadedmetadata = () => {
+                    updateResolutionBadge();
+                    // Try to apply focus mode
+                    applyFocusMode(focusSelect.value);
+                };
                 
             } catch (err) {
-                this.showNotification('Camera error', 'error');
+                console.error('Camera error:', err);
+                self.showNotification('Camera error: ' + err.message, 'error');
             }
         };
         
+        const applyFocusMode = async (mode) => {
+            if (!stream) return;
+            const track = stream.getVideoTracks()[0];
+            if (!track) return;
+            
+            try {
+                const capabilities = track.getCapabilities();
+                if (capabilities.focusMode) {
+                    if (mode === 'manual' && capabilities.focusMode.includes('manual')) {
+                        await track.applyConstraints({ advanced: [{ focusMode: 'manual' }] });
+                        focusSlider.classList.remove('hidden');
+                    } else if (capabilities.focusMode.includes('continuous')) {
+                        await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+                        focusSlider.classList.add('hidden');
+                    }
+                }
+            } catch (err) {
+                console.log('Focus mode not supported');
+            }
+        };
+        
+        const applyFocusDistance = async (value) => {
+            if (!stream) return;
+            const track = stream.getVideoTracks()[0];
+            if (!track) return;
+            
+            try {
+                const capabilities = track.getCapabilities();
+                if (capabilities.focusDistance) {
+                    const min = capabilities.focusDistance.min;
+                    const max = capabilities.focusDistance.max;
+                    const distance = min + (max - min) * (value / 100);
+                    await track.applyConstraints({ advanced: [{ focusDistance: distance }] });
+                }
+            } catch (err) {
+                console.log('Focus distance not supported');
+            }
+        };
+        
+        const updateFreezeButton = (isFrozen) => {
+            const btn = optionsMenu.querySelector('[data-action="freeze"]');
+            if (btn) btn.classList.toggle('active', isFrozen);
+        };
+        
         const captureSnapshot = () => {
-            if (!stream) return null;
+            if (!stream && !frozen) return null;
             const ctx = canvas.getContext('2d');
             const vw = video.videoWidth, vh = video.videoHeight;
             
-            canvas.width = vw;
-            canvas.height = vh;
+            // Handle rotation
+            if (rotation === 90 || rotation === 270) {
+                canvas.width = vh;
+                canvas.height = vw;
+            } else {
+                canvas.width = vw;
+                canvas.height = vh;
+            }
             
             ctx.save();
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate(rotation * Math.PI / 180);
+            
             if (mirrored) {
-                ctx.translate(vw, 0);
                 ctx.scale(-1, 1);
             }
-            ctx.drawImage(video, 0, 0);
+            
+            if (rotation === 90 || rotation === 270) {
+                ctx.drawImage(video, -vw / 2, -vh / 2);
+            } else {
+                ctx.drawImage(video, -vw / 2, -vh / 2);
+            }
             ctx.restore();
             
-            return canvas.toDataURL('image/jpeg', 0.9);
+            return canvas.toDataURL('image/jpeg', 0.95);
         };
         
         // Options toggle
@@ -3453,7 +3558,22 @@ class DesktopOS {
         optionsMenu.addEventListener('click', (e) => e.stopPropagation());
         
         // Source change
-        sourceSelect.addEventListener('change', (e) => startCamera(e.target.value));
+        sourceSelect.addEventListener('change', (e) => startCamera(e.target.value, currentResolution));
+        
+        // Resolution change
+        resolutionSelect.addEventListener('change', (e) => {
+            startCamera(currentDeviceId, e.target.value);
+        });
+        
+        // Focus mode change
+        focusSelect.addEventListener('change', (e) => {
+            applyFocusMode(e.target.value);
+        });
+        
+        // Focus slider
+        focusSlider.addEventListener('input', (e) => {
+            applyFocusDistance(e.target.value);
+        });
         
         // Option buttons
         optionsMenu.addEventListener('click', (e) => {
@@ -3461,21 +3581,51 @@ class DesktopOS {
             if (!btn) return;
             
             const action = btn.dataset.action;
+            
             if (action === 'mirror') {
                 mirrored = !mirrored;
                 btn.classList.toggle('active', mirrored);
-                video.style.transform = mirrored ? 'scaleX(-1)' : '';
+                const transform = [];
+                if (mirrored) transform.push('scaleX(-1)');
+                if (rotation) transform.push('rotate(' + rotation + 'deg)');
+                video.style.transform = transform.join(' ') || '';
+                
+            } else if (action === 'rotate') {
+                rotation = (rotation + 90) % 360;
+                btn.classList.toggle('active', rotation !== 0);
+                const transform = [];
+                if (mirrored) transform.push('scaleX(-1)');
+                if (rotation) transform.push('rotate(' + rotation + 'deg)');
+                video.style.transform = transform.join(' ') || '';
+                
             } else if (action === 'ontop') {
                 const isOnTop = windowEl.classList.toggle('always-on-top');
                 btn.classList.toggle('active', isOnTop);
                 windowEl.style.zIndex = isOnTop ? '99999' : '';
+                
+            } else if (action === 'freeze') {
+                frozen = !frozen;
+                updateFreezeButton(frozen);
+                if (frozen) {
+                    video.pause();
+                } else {
+                    video.play();
+                }
+                
             } else if (action === 'snapshot') {
                 const dataUrl = captureSnapshot();
                 if (dataUrl) {
                     const link = document.createElement('a');
-                    link.download = `snapshot-${Date.now()}.jpg`;
+                    link.download = 'snapshot-' + Date.now() + '.jpg';
                     link.href = dataUrl;
                     link.click();
+                }
+                
+            } else if (action === 'fullscreen') {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                } else {
+                    app.requestFullscreen();
                 }
             }
         });
@@ -3495,8 +3645,8 @@ class DesktopOS {
             if (stream) stream.getTracks().forEach(t => t.stop());
         };
         
-        // Auto-start
-        loadCameraSources().then(id => id && startCamera(id));
+        // Auto-start with 1080p
+        loadCameraSources().then(id => id && startCamera(id, '1080'));
     }
 
 
@@ -3880,18 +4030,66 @@ class DesktopOS {
         return '<div class="camera-app">' +
             '<video class="camera-video" autoplay playsinline></video>' +
             '<canvas class="camera-canvas"></canvas>' +
-            '<div class="camera-options-btn" title="Options">' +
-                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>' +
+            '<div class="camera-info-overlay">' +
+                '<span class="camera-resolution-badge">1080p</span>' +
+            '</div>' +
+            '<div class="camera-options-btn" title="Settings">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>' +
             '</div>' +
             '<div class="camera-options-menu hidden">' +
+                '<div class="camera-menu-header">Camera Settings</div>' +
                 '<div class="camera-option-group">' +
-                    '<label>Camera</label>' +
+                    '<label>Camera Source</label>' +
                     '<select class="camera-source-select"><option>Loading...</option></select>' +
                 '</div>' +
+                '<div class="camera-option-group">' +
+                    '<label>Resolution</label>' +
+                    '<select class="camera-resolution-select">' +
+                        '<option value="1080">1080p Full HD (1920×1080)</option>' +
+                        '<option value="4k">4K UHD (3840×2160)</option>' +
+                        '<option value="720">720p HD (1280×720)</option>' +
+                        '<option value="auto">Auto (Best Available)</option>' +
+                    '</select>' +
+                '</div>' +
+                '<div class="camera-option-group">' +
+                    '<label>Focus</label>' +
+                    '<select class="camera-focus-select">' +
+                        '<option value="auto">Auto Focus</option>' +
+                        '<option value="manual">Manual Focus</option>' +
+                    '</select>' +
+                    '<input type="range" class="camera-focus-slider hidden" min="0" max="100" value="50">' +
+                '</div>' +
+                '<div class="camera-option-divider"></div>' +
                 '<div class="camera-option-row">' +
-                    '<button class="camera-opt-btn" data-action="mirror"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg><span>Mirror</span></button>' +
-                    '<button class="camera-opt-btn" data-action="ontop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg><span>On Top</span></button>' +
-                    '<button class="camera-opt-btn" data-action="snapshot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg><span>Snap</span></button>' +
+                    '<button class="camera-opt-btn" data-action="mirror" title="Mirror/Flip horizontally">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l-4 5 4 5"/><path d="M16 7l4 5-4 5"/></svg>' +
+                        '<span>Mirror</span>' +
+                    '</button>' +
+                    '<button class="camera-opt-btn" data-action="rotate" title="Rotate 90°">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>' +
+                        '<span>Rotate</span>' +
+                    '</button>' +
+                '</div>' +
+                '<div class="camera-option-row">' +
+                    '<button class="camera-opt-btn" data-action="ontop" title="Keep window on top">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg>' +
+                        '<span>On Top</span>' +
+                    '</button>' +
+                    '<button class="camera-opt-btn" data-action="freeze" title="Freeze frame">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>' +
+                        '<span>Freeze</span>' +
+                    '</button>' +
+                '</div>' +
+                '<div class="camera-option-divider"></div>' +
+                '<div class="camera-option-row">' +
+                    '<button class="camera-opt-btn primary" data-action="snapshot" title="Take snapshot">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>' +
+                        '<span>Snapshot</span>' +
+                    '</button>' +
+                    '<button class="camera-opt-btn" data-action="fullscreen" title="Fullscreen">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>' +
+                        '<span>Fullscreen</span>' +
+                    '</button>' +
                 '</div>' +
             '</div>' +
         '</div>';

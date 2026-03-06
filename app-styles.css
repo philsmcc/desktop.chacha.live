@@ -2429,3 +2429,153 @@ body.dark-theme .wb-minimap {
     }
 }
 
+
+/* ==================== ENHANCED CAMERA APP STYLES ==================== */
+
+/* Resolution badge overlay */
+.camera-info-overlay {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    display: flex;
+    gap: 8px;
+    z-index: 5;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.camera-app:hover .camera-info-overlay {
+    opacity: 1;
+}
+
+.camera-resolution-badge {
+    background: rgba(0, 0, 0, 0.7);
+    color: #4ade80;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+/* Enhanced menu header */
+.camera-menu-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+/* Menu divider */
+.camera-option-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.1);
+    margin: 10px 0;
+}
+
+/* Enhanced selects */
+.camera-resolution-select,
+.camera-focus-select {
+    width: 100%;
+    padding: 6px 8px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.camera-resolution-select:hover,
+.camera-focus-select:hover {
+    border-color: rgba(255,255,255,0.3);
+}
+
+.camera-resolution-select option,
+.camera-focus-select option {
+    background: #1a1a2e;
+}
+
+/* Focus slider */
+.camera-focus-slider {
+    width: 100%;
+    margin-top: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.camera-focus-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #f57c00;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.camera-focus-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #f57c00;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+/* Primary button style */
+.camera-opt-btn.primary {
+    background: rgba(245, 124, 0, 0.3);
+    border: 1px solid rgba(245, 124, 0, 0.5);
+}
+
+.camera-opt-btn.primary:hover {
+    background: rgba(245, 124, 0, 0.5);
+}
+
+/* Expanded options menu for more options */
+.camera-options-menu {
+    min-width: 200px;
+}
+
+/* Fullscreen camera styles */
+.camera-app:fullscreen {
+    background: #000;
+}
+
+.camera-app:fullscreen .camera-video {
+    object-fit: contain;
+}
+
+.camera-app:fullscreen .camera-options-btn {
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+}
+
+.camera-app:fullscreen .camera-options-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+.camera-app:fullscreen .camera-options-menu {
+    top: 70px;
+    right: 20px;
+}
+
+.camera-app:fullscreen .camera-info-overlay {
+    bottom: 20px;
+    left: 20px;
+}
+
+.camera-app:fullscreen .camera-resolution-badge {
+    font-size: 14px;
+    padding: 6px 12px;
+}
