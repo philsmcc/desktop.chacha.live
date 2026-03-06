@@ -3397,6 +3397,20 @@ class DesktopOS {
         let currentResolution = '1080';
         let isStarting = false;
         
+        // Smart Mode variables
+        let smartModeEnabled = false;
+        let smartModeAnimationFrame = null;
+        let detectedCorners = null;
+        const overlayCanvas = app.querySelector('.camera-overlay-canvas');
+        const overlayCtx = overlayCanvas ? overlayCanvas.getContext('2d') : null;
+        const smartToggle = app.querySelector('.camera-smart-toggle');
+        const smartStatus = app.querySelector('.smart-mode-status');
+        const smartBadge = app.querySelector('.camera-smart-badge');
+        
+        // 8.5 x 11 aspect ratio (letter size)
+        const LETTER_ASPECT = 8.5 / 11;
+        const MARGIN_PERCENT = 0.03; // 3% margin
+        
         // Resolution presets - use exact constraints for reliability
         const resolutions = {
             '4k': { width: 3840, height: 2160, label: '4K' },
@@ -3685,6 +3699,58 @@ class DesktopOS {
             const ctx = canvas.getContext('2d');
             const vw = video.videoWidth, vh = video.videoHeight;
             
+            // If Smart Mode is enabled and we have detected corners, apply perspective transform
+            if (smartModeEnabled && detectedCorners && detectedCorners.length === 4 && typeof cv !== 'undefined') {
+                try {
+                    // Create temp canvas at full resolution
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = vw;
+                    tempCanvas.height = vh;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    // Draw video (with mirroring if needed)
+                    if (mirrored) {
+                        tempCtx.translate(vw, 0);
+                        tempCtx.scale(-1, 1);
+                    }
+                    tempCtx.drawImage(video, 0, 0);
+                    
+                    // Get image data and create OpenCV mat
+                    const imageData = tempCtx.getImageData(0, 0, vw, vh);
+                    const src = cv.matFromImageData(imageData);
+                    
+                    // Apply perspective transform
+                    const transformed = applyPerspectiveTransform(src, detectedCorners);
+                    
+                    if (transformed) {
+                        // Set canvas size to transformed image size
+                        canvas.width = transformed.cols;
+                        canvas.height = transformed.rows;
+                        
+                        // Draw transformed image to canvas
+                        const transformedData = new ImageData(
+                            new Uint8ClampedArray(transformed.data),
+                            transformed.cols,
+                            transformed.rows
+                        );
+                        ctx.putImageData(transformedData, 0, 0);
+                        
+                        // Clean up
+                        transformed.delete();
+                        src.delete();
+                        
+                        console.log('Smart Mode snapshot captured:', canvas.width + 'x' + canvas.height);
+                        return canvas.toDataURL('image/jpeg', 0.95);
+                    }
+                    
+                    src.delete();
+                } catch (err) {
+                    console.error('Smart Mode snapshot error:', err);
+                    // Fall through to normal snapshot
+                }
+            }
+            
+            // Normal snapshot (no Smart Mode)
             // Handle rotation
             if (rotation === 90 || rotation === 270) {
                 canvas.width = vh;
@@ -3808,6 +3874,405 @@ class DesktopOS {
         windowEl.cameraCleanup = () => {
             stopCurrentStream();
         };
+        
+        // ========== SMART MODE FUNCTIONS ==========
+        
+        // Wait for OpenCV to be ready
+        const waitForOpenCV = () => {
+            return new Promise((resolve) => {
+                if (typeof cv !== 'undefined' && cv.Mat) {
+                    resolve(true);
+                } else {
+                    const checkInterval = setInterval(() => {
+                        if (typeof cv !== 'undefined' && cv.Mat) {
+                            clearInterval(checkInterval);
+                            resolve(true);
+                        }
+                    }, 100);
+                    // Timeout after 10 seconds
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        resolve(false);
+                    }, 10000);
+                }
+            });
+        };
+        
+        // Detect document corners using OpenCV
+        const detectDocumentCorners = (srcMat) => {
+            if (typeof cv === 'undefined') return null;
+            
+            try {
+                // Convert to grayscale
+                const gray = new cv.Mat();
+                cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
+                
+                // Apply Gaussian blur to reduce noise
+                const blurred = new cv.Mat();
+                cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+                
+                // Apply Canny edge detection
+                const edges = new cv.Mat();
+                cv.Canny(blurred, edges, 50, 150);
+                
+                // Dilate edges to connect gaps
+                const dilated = new cv.Mat();
+                const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+                cv.dilate(edges, dilated, kernel);
+                
+                // Find contours
+                const contours = new cv.MatVector();
+                const hierarchy = new cv.Mat();
+                cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+                
+                // Find the largest quadrilateral contour
+                let maxArea = 0;
+                let bestContour = null;
+                let bestApprox = null;
+                
+                const imageArea = srcMat.rows * srcMat.cols;
+                const minArea = imageArea * 0.1; // At least 10% of image
+                
+                for (let i = 0; i < contours.size(); i++) {
+                    const contour = contours.get(i);
+                    const area = cv.contourArea(contour);
+                    
+                    if (area > minArea && area > maxArea) {
+                        // Approximate contour to polygon
+                        const approx = new cv.Mat();
+                        const peri = cv.arcLength(contour, true);
+                        cv.approxPolyDP(contour, approx, 0.02 * peri, true);
+                        
+                        // Check if it's a quadrilateral
+                        if (approx.rows === 4) {
+                            // Check if it's convex
+                            if (cv.isContourConvex(approx)) {
+                                maxArea = area;
+                                if (bestApprox) bestApprox.delete();
+                                bestApprox = approx;
+                                bestContour = contour;
+                            } else {
+                                approx.delete();
+                            }
+                        } else {
+                            approx.delete();
+                        }
+                    }
+                }
+                
+                // Clean up
+                gray.delete();
+                blurred.delete();
+                edges.delete();
+                dilated.delete();
+                kernel.delete();
+                hierarchy.delete();
+                
+                if (bestApprox && bestApprox.rows === 4) {
+                    // Extract corners
+                    const corners = [];
+                    for (let i = 0; i < 4; i++) {
+                        corners.push({
+                            x: bestApprox.data32S[i * 2],
+                            y: bestApprox.data32S[i * 2 + 1]
+                        });
+                    }
+                    
+                    // Order corners: top-left, top-right, bottom-right, bottom-left
+                    const orderedCorners = orderCorners(corners);
+                    
+                    bestApprox.delete();
+                    for (let i = 0; i < contours.size(); i++) {
+                        contours.get(i).delete();
+                    }
+                    contours.delete();
+                    
+                    return orderedCorners;
+                }
+                
+                // Clean up contours
+                for (let i = 0; i < contours.size(); i++) {
+                    contours.get(i).delete();
+                }
+                contours.delete();
+                if (bestApprox) bestApprox.delete();
+                
+                return null;
+            } catch (err) {
+                console.error('Corner detection error:', err);
+                return null;
+            }
+        };
+        
+        // Order corners consistently: TL, TR, BR, BL
+        const orderCorners = (corners) => {
+            // Find center
+            const center = corners.reduce((acc, c) => ({ x: acc.x + c.x / 4, y: acc.y + c.y / 4 }), { x: 0, y: 0 });
+            
+            // Sort by angle from center
+            const sorted = corners.map(c => ({
+                ...c,
+                angle: Math.atan2(c.y - center.y, c.x - center.x)
+            })).sort((a, b) => a.angle - b.angle);
+            
+            // Find top-left (smallest x+y sum)
+            let tlIndex = 0;
+            let minSum = Infinity;
+            sorted.forEach((c, i) => {
+                const sum = c.x + c.y;
+                if (sum < minSum) {
+                    minSum = sum;
+                    tlIndex = i;
+                }
+            });
+            
+            // Rotate array so TL is first
+            const result = [];
+            for (let i = 0; i < 4; i++) {
+                const corner = sorted[(tlIndex + i) % 4];
+                result.push({ x: corner.x, y: corner.y });
+            }
+            
+            return result;
+        };
+        
+        // Apply perspective transform to get de-skewed 8.5x11 image
+        const applyPerspectiveTransform = (srcMat, corners) => {
+            if (typeof cv === 'undefined' || !corners || corners.length !== 4) return null;
+            
+            try {
+                // Calculate output dimensions maintaining 8.5x11 aspect ratio
+                // Use the larger dimension to determine output size
+                const width1 = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+                const width2 = Math.hypot(corners[2].x - corners[3].x, corners[2].y - corners[3].y);
+                const height1 = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
+                const height2 = Math.hypot(corners[2].x - corners[1].x, corners[2].y - corners[1].y);
+                
+                const maxWidth = Math.max(width1, width2);
+                const maxHeight = Math.max(height1, height2);
+                
+                // Determine if document is portrait or landscape
+                let outWidth, outHeight;
+                if (maxWidth > maxHeight) {
+                    // Landscape - use 11x8.5
+                    outWidth = Math.round(maxWidth);
+                    outHeight = Math.round(outWidth * (8.5 / 11));
+                } else {
+                    // Portrait - use 8.5x11
+                    outHeight = Math.round(maxHeight);
+                    outWidth = Math.round(outHeight * (8.5 / 11));
+                }
+                
+                // Add margin
+                const marginX = Math.round(outWidth * MARGIN_PERCENT);
+                const marginY = Math.round(outHeight * MARGIN_PERCENT);
+                outWidth += marginX * 2;
+                outHeight += marginY * 2;
+                
+                // Source points (detected corners)
+                const srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                    corners[0].x, corners[0].y,
+                    corners[1].x, corners[1].y,
+                    corners[2].x, corners[2].y,
+                    corners[3].x, corners[3].y
+                ]);
+                
+                // Destination points (rectangle with margin)
+                const dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                    marginX, marginY,
+                    outWidth - marginX, marginY,
+                    outWidth - marginX, outHeight - marginY,
+                    marginX, outHeight - marginY
+                ]);
+                
+                // Get perspective transform matrix
+                const M = cv.getPerspectiveTransform(srcPoints, dstPoints);
+                
+                // Apply transform
+                const dst = new cv.Mat();
+                cv.warpPerspective(srcMat, dst, M, new cv.Size(outWidth, outHeight), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+                
+                // Clean up
+                srcPoints.delete();
+                dstPoints.delete();
+                M.delete();
+                
+                return dst;
+            } catch (err) {
+                console.error('Perspective transform error:', err);
+                return null;
+            }
+        };
+        
+        // Draw detected corners on overlay canvas
+        const drawCornerOverlay = (corners) => {
+            if (!overlayCanvas || !overlayCtx) return;
+            
+            // Match overlay canvas size to video display size
+            const rect = video.getBoundingClientRect();
+            overlayCanvas.width = rect.width;
+            overlayCanvas.height = rect.height;
+            
+            // Calculate scale factors
+            const scaleX = rect.width / video.videoWidth;
+            const scaleY = rect.height / video.videoHeight;
+            
+            // Clear previous drawing
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            
+            if (!corners || corners.length !== 4) return;
+            
+            // Scale corners to display size
+            const scaledCorners = corners.map(c => ({
+                x: c.x * scaleX,
+                y: c.y * scaleY
+            }));
+            
+            // Draw semi-transparent overlay outside document
+            overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            
+            // Cut out document area
+            overlayCtx.globalCompositeOperation = 'destination-out';
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(scaledCorners[0].x, scaledCorners[0].y);
+            for (let i = 1; i < 4; i++) {
+                overlayCtx.lineTo(scaledCorners[i].x, scaledCorners[i].y);
+            }
+            overlayCtx.closePath();
+            overlayCtx.fill();
+            overlayCtx.globalCompositeOperation = 'source-over';
+            
+            // Draw corner markers
+            overlayCtx.strokeStyle = '#10b981';
+            overlayCtx.lineWidth = 3;
+            overlayCtx.lineJoin = 'round';
+            
+            // Draw document outline
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(scaledCorners[0].x, scaledCorners[0].y);
+            for (let i = 1; i < 4; i++) {
+                overlayCtx.lineTo(scaledCorners[i].x, scaledCorners[i].y);
+            }
+            overlayCtx.closePath();
+            overlayCtx.stroke();
+            
+            // Draw corner circles
+            overlayCtx.fillStyle = '#10b981';
+            scaledCorners.forEach(corner => {
+                overlayCtx.beginPath();
+                overlayCtx.arc(corner.x, corner.y, 8, 0, Math.PI * 2);
+                overlayCtx.fill();
+                overlayCtx.strokeStyle = 'white';
+                overlayCtx.lineWidth = 2;
+                overlayCtx.stroke();
+            });
+        };
+        
+        // Smart Mode processing loop
+        const processSmartMode = () => {
+            if (!smartModeEnabled || !video.videoWidth || frozen) {
+                if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                return;
+            }
+            
+            try {
+                // Create temporary canvas for processing at lower resolution
+                const tempCanvas = document.createElement('canvas');
+                const scale = 0.5; // Process at half resolution for speed
+                tempCanvas.width = video.videoWidth * scale;
+                tempCanvas.height = video.videoHeight * scale;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // Apply mirroring if needed
+                if (mirrored) {
+                    tempCtx.translate(tempCanvas.width, 0);
+                    tempCtx.scale(-1, 1);
+                }
+                
+                tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+                
+                // Get image data
+                const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                const src = cv.matFromImageData(imageData);
+                
+                // Detect corners
+                const corners = detectDocumentCorners(src);
+                
+                if (corners) {
+                    // Scale corners back to full resolution
+                    detectedCorners = corners.map(c => ({
+                        x: c.x / scale,
+                        y: c.y / scale
+                    }));
+                    drawCornerOverlay(detectedCorners);
+                } else {
+                    detectedCorners = null;
+                    if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                }
+                
+                src.delete();
+            } catch (err) {
+                console.error('Smart mode processing error:', err);
+            }
+            
+            // Continue processing loop (throttled to ~10fps for performance)
+            smartModeAnimationFrame = setTimeout(() => {
+                requestAnimationFrame(processSmartMode);
+            }, 100);
+        };
+        
+        // Start Smart Mode
+        const startSmartMode = async () => {
+            const cvReady = await waitForOpenCV();
+            if (!cvReady) {
+                console.error('OpenCV not available');
+                if (self && self.showNotification) {
+                    self.showNotification('Smart Mode requires OpenCV - please refresh', 'error');
+                }
+                smartToggle.checked = false;
+                return;
+            }
+            
+            smartModeEnabled = true;
+            app.classList.add('smart-mode-active');
+            if (smartBadge) smartBadge.classList.remove('hidden');
+            if (smartStatus) smartStatus.textContent = 'On';
+            
+            processSmartMode();
+        };
+        
+        // Stop Smart Mode
+        const stopSmartMode = () => {
+            smartModeEnabled = false;
+            app.classList.remove('smart-mode-active');
+            if (smartBadge) smartBadge.classList.add('hidden');
+            if (smartStatus) smartStatus.textContent = 'Off';
+            
+            if (smartModeAnimationFrame) {
+                clearTimeout(smartModeAnimationFrame);
+                smartModeAnimationFrame = null;
+            }
+            
+            if (overlayCtx) {
+                overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            }
+            
+            detectedCorners = null;
+        };
+        
+        // Smart Mode toggle handler
+        if (smartToggle) {
+            smartToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    startSmartMode();
+                } else {
+                    stopSmartMode();
+                }
+            });
+        }
+        
+        // ========== END SMART MODE FUNCTIONS ==========
         
         // Auto-start with 1080p - with retry logic
         const initializeCamera = async () => {
@@ -4208,8 +4673,10 @@ class DesktopOS {
         return '<div class="camera-app">' +
             '<video class="camera-video" autoplay playsinline></video>' +
             '<canvas class="camera-canvas"></canvas>' +
+            '<canvas class="camera-overlay-canvas"></canvas>' +
             '<div class="camera-info-overlay">' +
                 '<span class="camera-resolution-badge">1080p</span>' +
+                '<span class="camera-smart-badge hidden">📄 Smart</span>' +
             '</div>' +
             '<div class="camera-options-btn" title="Settings">' +
                 '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>' +
@@ -4236,6 +4703,19 @@ class DesktopOS {
                         '<option value="manual">Manual Focus</option>' +
                     '</select>' +
                     '<input type="range" class="camera-focus-slider hidden" min="0" max="100" value="50">' +
+                '</div>' +
+                '<div class="camera-option-divider"></div>' +
+                '<div class="camera-option-group smart-mode-group">' +
+                    '<label class="smart-mode-label">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>' +
+                        'Smart Mode (Document Scan)' +
+                    '</label>' +
+                    '<div class="smart-mode-toggle">' +
+                        '<input type="checkbox" class="camera-smart-toggle" id="camera-smart-toggle">' +
+                        '<label for="camera-smart-toggle" class="toggle-switch"></label>' +
+                        '<span class="smart-mode-status">Off</span>' +
+                    '</div>' +
+                    '<p class="smart-mode-desc">Auto-detect document edges, de-skew, and crop to 8.5×11</p>' +
                 '</div>' +
                 '<div class="camera-option-divider"></div>' +
                 '<div class="camera-option-row">' +
