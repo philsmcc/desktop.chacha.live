@@ -306,8 +306,12 @@ app.post('/api/auth/resend-verification', async (req, res) => {
 // Login - Using email as identifier
 app.post('/api/auth/login', async (req, res) => {
     try {
+        console.log('Login request body:', JSON.stringify(req.body));
         const { email, password } = req.body;
-        if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+        if (!email || !password) {
+            console.log('Missing email or password. Email:', !!email, 'Password:', !!password);
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
 
         const emailLower = email.toLowerCase().trim();
         console.log('Login attempt for:', emailLower);
