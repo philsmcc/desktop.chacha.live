@@ -482,7 +482,11 @@ app.put('/api/preferences', authenticateToken, async (req, res) => {
 app.get('/api/files', authenticateToken, async (req, res) => {
     try {
         const folder = req.query.folder || '';
-        const prefix = `${getUserPrefix(req.user.email)}/files/${folder}`.replace(/\/+/g, '/');
+        let prefix = `${getUserPrefix(req.user.email)}/files/${folder}`.replace(/\/+/g, '/');
+        // Ensure prefix ends with / for proper S3 listing
+        if (!prefix.endsWith('/')) prefix += '/';
+        
+        console.log('Listing files with prefix:', prefix);
         
         const response = await s3Client.send(new ListObjectsV2Command({
             Bucket: BUCKET, Prefix: prefix, Delimiter: '/'
