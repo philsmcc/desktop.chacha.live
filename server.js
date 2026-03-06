@@ -500,7 +500,8 @@ app.get('/api/files', authenticateToken, async (req, res) => {
                 type: 'file',
                 size: obj.Size,
                 modified: obj.LastModified,
-                key: obj.Key
+                key: obj.Key,
+                path: obj.Key
             }));
 
         res.json({ folders, files, currentPath: folder });
@@ -514,7 +515,8 @@ app.post('/api/files/upload', authenticateToken, upload.single('file'), async (r
     try {
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
         
-        const folder = req.body.folder || '';
+        const folder = req.query.folder || req.body.folder || '';
+        console.log('Upload to folder:', folder, 'File:', req.file.originalname);
         const key = `${getUserPrefix(req.user.email)}/files/${folder}/${req.file.originalname}`.replace(/\/+/g, '/');
         
         await s3Client.send(new PutObjectCommand({
@@ -525,6 +527,25 @@ app.post('/api/files/upload', authenticateToken, upload.single('file'), async (r
     } catch (error) {
         console.error('Upload error:', error);
         res.status(500).json({ error: 'Failed to upload file' });
+    }
+});
+
+// Get signed URL for file (for thumbnails)
+app.get('/api/files/url', authenticateToken, async (req, res) => {
+    try {
+        const { path } = req.query;
+        if (!path) return res.status(400).json({ error: 'Path is required' });
+        
+        // Verify user has access to this file
+        if (!path.startsWith(getUserPrefix(req.user.email))) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        const url = await getSignedUrl(s3Client, new GetObjectCommand({ Bucket: BUCKET, Key: path }), { expiresIn: 3600 });
+        res.json({ url });
+    } catch (error) {
+        console.error('Get file URL error:', error);
+        res.status(500).json({ error: 'Failed to get file URL' });
     }
 });
 
