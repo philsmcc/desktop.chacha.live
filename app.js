@@ -4173,6 +4173,7 @@ class DesktopOS {
         const processSmartMode = () => {
             if (!smartModeEnabled || !video.videoWidth || frozen) {
                 if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                video.style.opacity = '1';
                 return;
             }
             
@@ -4205,21 +4206,85 @@ class DesktopOS {
                         x: c.x / scale,
                         y: c.y / scale
                     }));
-                    drawCornerOverlay(detectedCorners);
+                    
+                    // Apply perspective transform for live preview
+                    const transformed = applyPerspectiveTransform(src, corners);
+                    
+                    if (transformed) {
+                        // Hide the video and show the transformed preview on overlay canvas
+                        video.style.opacity = '0';
+                        
+                        // Size the overlay canvas to fit the container while maintaining aspect ratio
+                        const containerRect = app.getBoundingClientRect();
+                        const docAspect = transformed.cols / transformed.rows;
+                        const containerAspect = containerRect.width / containerRect.height;
+                        
+                        let displayWidth, displayHeight, offsetX, offsetY;
+                        
+                        if (docAspect > containerAspect) {
+                            // Document is wider - fit to width
+                            displayWidth = containerRect.width;
+                            displayHeight = containerRect.width / docAspect;
+                            offsetX = 0;
+                            offsetY = (containerRect.height - displayHeight) / 2;
+                        } else {
+                            // Document is taller - fit to height
+                            displayHeight = containerRect.height;
+                            displayWidth = containerRect.height * docAspect;
+                            offsetX = (containerRect.width - displayWidth) / 2;
+                            offsetY = 0;
+                        }
+                        
+                        overlayCanvas.width = containerRect.width;
+                        overlayCanvas.height = containerRect.height;
+                        
+                        // Fill background
+                        overlayCtx.fillStyle = '#1a1a2e';
+                        overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                        
+                        // Draw transformed document
+                        const transformedData = new ImageData(
+                            new Uint8ClampedArray(transformed.data),
+                            transformed.cols,
+                            transformed.rows
+                        );
+                        
+                        // Create temp canvas for the transformed image
+                        const previewCanvas = document.createElement('canvas');
+                        previewCanvas.width = transformed.cols;
+                        previewCanvas.height = transformed.rows;
+                        previewCanvas.getContext('2d').putImageData(transformedData, 0, 0);
+                        
+                        // Draw scaled to fit
+                        overlayCtx.drawImage(previewCanvas, offsetX, offsetY, displayWidth, displayHeight);
+                        
+                        // Draw subtle border around the document
+                        overlayCtx.strokeStyle = '#10b981';
+                        overlayCtx.lineWidth = 2;
+                        overlayCtx.strokeRect(offsetX, offsetY, displayWidth, displayHeight);
+                        
+                        transformed.delete();
+                    } else {
+                        // Transform failed, show corner overlay instead
+                        video.style.opacity = '1';
+                        drawCornerOverlay(detectedCorners);
+                    }
                 } else {
                     detectedCorners = null;
+                    video.style.opacity = '1';
                     if (overlayCtx) overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
                 }
                 
                 src.delete();
             } catch (err) {
                 console.error('Smart mode processing error:', err);
+                video.style.opacity = '1';
             }
             
-            // Continue processing loop (throttled to ~10fps for performance)
+            // Continue processing loop (throttled to ~15fps for smoother preview)
             smartModeAnimationFrame = setTimeout(() => {
                 requestAnimationFrame(processSmartMode);
-            }, 100);
+            }, 66);
         };
         
         // Start Smart Mode
@@ -4257,6 +4322,9 @@ class DesktopOS {
             if (overlayCtx) {
                 overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
             }
+            
+            // Restore video visibility
+            video.style.opacity = '1';
             
             detectedCorners = null;
         };
