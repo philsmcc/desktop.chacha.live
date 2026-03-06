@@ -748,11 +748,14 @@ class DesktopOS {
         });
     }
 
-    renderDesktopIcons() {
+    async renderDesktopIcons() {
         const container = document.getElementById("desktop-icons");
         container.innerHTML = "";
         
-        this.apps.forEach((app, index) => {
+        let iconIndex = 0;
+        
+        // Render app icons
+        this.apps.forEach((app) => {
             const icon = document.createElement("div");
             icon.className = "desktop-icon";
             icon.dataset.app = app.id;
@@ -768,8 +771,8 @@ class DesktopOS {
                 icon.style.top = savedPos.y + "px";
             } else {
                 // Default grid layout
-                const col = Math.floor(index / 5);
-                const row = index % 5;
+                const col = Math.floor(iconIndex / 5);
+                const row = iconIndex % 5;
                 icon.style.position = "absolute";
                 icon.style.left = (24 + col * 100) + "px";
                 icon.style.top = (24 + row * 100) + "px";
@@ -783,10 +786,106 @@ class DesktopOS {
                 e.preventDefault();
                 this.openApp(app.id);
             });
+            
+            iconIndex++;
         });
+        
+        // Load and render desktop files
+        await this.loadDesktopFiles(container, iconIndex);
+    }
+    
+    async loadDesktopFiles(container, startIndex) {
+        try {
+            const response = await this.api('/desktop');
+            const items = response.items || [];
+            
+            items.forEach((item, i) => {
+                const iconIndex = startIndex + i;
+                const icon = document.createElement("div");
+                icon.className = "desktop-icon desktop-file";
+                icon.dataset.file = item.key;
+                icon.dataset.name = item.name;
+                
+                const isImage = item.type === 'image';
+                const iconSvg = isImage 
+                    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>'
+                    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+                
+                icon.innerHTML = 
+                    '<div class="desktop-icon-img file-icon-img">' + iconSvg + '</div>' +
+                    '<span class="desktop-icon-label">' + item.name + '</span>';
+                
+                // Apply saved position or default grid position
+                const savedPos = this.iconPositions['file_' + item.name];
+                if (savedPos) {
+                    icon.style.position = "absolute";
+                    icon.style.left = savedPos.x + "px";
+                    icon.style.top = savedPos.y + "px";
+                } else {
+                    const col = Math.floor(iconIndex / 5);
+                    const row = iconIndex % 5;
+                    icon.style.position = "absolute";
+                    icon.style.left = (24 + col * 100) + "px";
+                    icon.style.top = (24 + row * 100) + "px";
+                }
+                
+                container.appendChild(icon);
+                this.makeIconDraggable(icon, 'file_' + item.name);
+                
+                // Double-click to open file
+                icon.addEventListener("dblclick", async (e) => {
+                    e.preventDefault();
+                    await this.openDesktopFile(item);
+                });
+            });
+        } catch (error) {
+            console.error('Failed to load desktop files:', error);
+        }
+    }
+    
+    async openDesktopFile(item) {
+        try {
+            // Get signed URL for the file
+            const response = await this.api('/files/url?path=' + encodeURIComponent(item.path));
+            const url = response.url;
+            
+            if (item.type === 'image') {
+                // Open image in a viewer window
+                this.openImageViewer(item.name, url);
+            } else {
+                // Download other files
+                window.open(url, '_blank');
+            }
+        } catch (error) {
+            console.error('Failed to open file:', error);
+        }
+    }
+    
+    openImageViewer(name, url) {
+        const windowId = 'imageviewer-' + Date.now();
+        const windowEl = document.createElement("div");
+        windowEl.className = "window";
+        windowEl.id = windowId;
+        windowEl.innerHTML = `
+            <div class="window-header">
+                <span class="window-title">${name}</span>
+                <div class="window-controls">
+                    <button class="window-btn minimize-btn">−</button>
+                    <button class="window-btn maximize-btn">□</button>
+                    <button class="window-btn close-btn">×</button>
+                </div>
+            </div>
+            <div class="window-content" style="padding: 0; display: flex; align-items: center; justify-content: center; background: #1a1a2e;">
+                <img src="${url}" alt="${name}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+            </div>
+        `;
+        
+        document.getElementById("windows-container").appendChild(windowEl);
+        this.initWindow(windowEl, { name: name, id: windowId });
+        this.positionWindow(windowEl);
     }
 
-    makeIconDraggable(icon) {
+    makeIconDraggable(icon, customId = null) {
         let isDragging = false;
         let hasMoved = false;
         let startX, startY, startLeft, startTop;
@@ -848,8 +947,8 @@ class DesktopOS {
             
             // Save position if moved
             if (hasMoved) {
-                const appId = icon.dataset.app;
-                this.iconPositions[appId] = {
+                const iconId = customId || icon.dataset.app;
+                this.iconPositions[iconId] = {
                     x: icon.offsetLeft,
                     y: icon.offsetTop
                 };

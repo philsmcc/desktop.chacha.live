@@ -261,7 +261,7 @@ app.get('/api/auth/verify', async (req, res) => {
                 Bucket: BUCKET, Key: `${getUserPrefix(pendingUser.email)}/preferences.json`,
                 Body: JSON.stringify(preferences), ContentType: 'application/json'
             }));
-            for (const folder of ['wallpapers', 'files/Documents', 'files/Pictures', 'files/Videos']) {
+            for (const folder of ['wallpapers', 'files/Desktop', 'files/Documents', 'files/Pictures', 'files/Videos']) {
                 await s3Client.send(new PutObjectCommand({
                     Bucket: BUCKET, Key: `${getUserPrefix(pendingUser.email)}/${folder}/.keep`,
                     Body: '', ContentType: 'text/plain'
@@ -512,6 +512,37 @@ app.get('/api/files', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('List files error:', error);
         res.status(500).json({ error: 'Failed to list files' });
+    }
+});
+
+// Get desktop items (files in Desktop folder)
+app.get('/api/desktop', authenticateToken, async (req, res) => {
+    try {
+        const prefix = `${getUserPrefix(req.user.email)}/files/Desktop/`;
+        
+        const response = await s3Client.send(new ListObjectsV2Command({
+            Bucket: BUCKET, Prefix: prefix, Delimiter: '/'
+        }));
+
+        const items = (response.Contents || [])
+            .filter(obj => !obj.Key.endsWith('/.keep') && obj.Key !== prefix)
+            .map(obj => {
+                const name = obj.Key.split('/').pop();
+                const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(name);
+                return {
+                    name,
+                    type: isImage ? 'image' : 'file',
+                    size: obj.Size,
+                    modified: obj.LastModified,
+                    key: obj.Key,
+                    path: obj.Key
+                };
+            });
+
+        res.json({ items });
+    } catch (error) {
+        console.error('Desktop items error:', error);
+        res.status(500).json({ error: 'Failed to get desktop items' });
     }
 });
 
