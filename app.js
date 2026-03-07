@@ -794,17 +794,33 @@ class DesktopOS {
                     
                     // Only move if not already on desktop
                     if (fileData.source !== 'desktop') {
-                        const response = await self.api('/files/move', {
-                            method: 'POST',
-                            body: JSON.stringify({
-                                sourceKey: fileData.key,
-                                destinationFolder: 'Desktop'
-                            })
-                        });
+                        // Check if file is from shared folder (key starts with 'shared/')
+                        const isFromShared = fileData.key.startsWith('shared/');
                         
-                        // Refresh desktop icons
-                        await self.renderDesktopIcons();
-                        self.showNotification('Moved to Desktop: ' + fileData.name, 'success');
+                        if (isFromShared) {
+                            // Can't move from shared folder to desktop
+                            self.showNotification('Cannot move files from shared folder to desktop', 'error');
+                        } else {
+                            const response = await self.api('/files/move', {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    sourceKey: fileData.key,
+                                    destinationFolder: 'Desktop'
+                                })
+                            });
+                            
+                            // Refresh desktop icons
+                            await self.renderDesktopIcons();
+                            
+                            // Refresh any open Files window
+                            const filesWindow = document.querySelector('.window[id^="files"]');
+                            if (filesWindow) {
+                                const refreshEvent = new CustomEvent('refreshFiles');
+                                filesWindow.dispatchEvent(refreshEvent);
+                            }
+                            
+                            self.showNotification('Moved to Desktop: ' + fileData.name, 'success');
+                        }
                     }
                 } catch (err) {
                     console.error('Failed to move file to desktop:', err);
@@ -5285,6 +5301,11 @@ class DesktopOS {
         checkSharedFolder().then(() => {
             loadFiles();
             updatePath();
+        });
+        
+        // Listen for refresh events from desktop drop
+        windowEl.addEventListener('refreshFiles', () => {
+            loadFiles();
         });
     }
 
