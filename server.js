@@ -840,11 +840,18 @@ app.get('/api/shared/url', authenticateToken, async (req, res) => {
         
         let fullKey = key;
         if (!fullKey && path) {
-            fullKey = `${sharedPrefix}${path}`;
+            // Check if path already includes the shared prefix
+            if (path.startsWith('shared/')) {
+                fullKey = path;
+            } else {
+                fullKey = `${sharedPrefix}${path}`;
+            }
         }
         
-        // Security check
-        if (!fullKey || !fullKey.startsWith(sharedPrefix.replace(/\/$/, ''))) {
+        // Security check - ensure the key belongs to this org's shared folder
+        const expectedPrefix = sharedPrefix.replace(/\/$/, '');
+        if (!fullKey || !fullKey.startsWith(expectedPrefix)) {
+            console.log('Access denied - fullKey:', fullKey, 'expectedPrefix:', expectedPrefix);
             return res.status(403).json({ error: 'Access denied' });
         }
         
