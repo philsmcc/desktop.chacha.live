@@ -762,10 +762,11 @@ class DesktopOS {
         const self = this;
         
         desktop.addEventListener('dragover', (e) => {
-            // Check if it's a file from the Files app or camera snapshot
+            // Check if it's a file from the Files app, camera snapshot, or external file
             if (e.dataTransfer.types.includes('application/hovercam-file') ||
                 e.dataTransfer.types.includes('application/x-camera-snapshot') ||
-                e.dataTransfer.types.includes('text/uri-list')) {
+                e.dataTransfer.types.includes('text/uri-list') ||
+                e.dataTransfer.types.includes('Files')) {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'copy';
                 desktop.classList.add('drop-target');
@@ -804,6 +805,44 @@ class DesktopOS {
                 } catch (err) {
                     console.error('Failed to move file to desktop:', err);
                 }
+                return;
+            }
+            
+            // Handle external file drops (from computer)
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                e.preventDefault();
+                for (const file of e.dataTransfer.files) {
+                    const isImage = file.type.startsWith('image/');
+                    const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+                    
+                    if (isImage || isPDF) {
+                        try {
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            
+                            const uploadResponse = await fetch('/api/files/upload?folder=Desktop', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': 'Bearer ' + self.token
+                                },
+                                body: formData
+                            });
+                            
+                            if (!uploadResponse.ok) {
+                                throw new Error('Upload failed');
+                            }
+                            
+                            self.showNotification('Uploaded: ' + file.name, 'success');
+                        } catch (err) {
+                            console.error('Failed to upload file:', err);
+                            self.showNotification('Failed to upload: ' + file.name, 'error');
+                        }
+                    } else {
+                        self.showNotification('Only images and PDFs are supported', 'error');
+                    }
+                }
+                // Refresh desktop icons after all uploads
+                await self.renderDesktopIcons();
                 return;
             }
             
@@ -938,9 +977,15 @@ class DesktopOS {
                 icon.dataset.name = item.name;
                 
                 const isImage = item.type === 'image';
-                const iconSvg = isImage 
-                    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>'
-                    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+                const isPDF = item.name.toLowerCase().endsWith('.pdf');
+                let iconSvg;
+                if (isImage) {
+                    iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
+                } else if (isPDF) {
+                    iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><text x="7" y="17" font-size="6" fill="#ef4444" stroke="none" font-weight="bold">PDF</text></svg>';
+                } else {
+                    iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+                }
                 
                 icon.innerHTML = 
                     '<div class="desktop-icon-img file-icon-img">' + iconSvg + '</div>' +
@@ -999,6 +1044,9 @@ class DesktopOS {
             if (item.type === 'image') {
                 // Open image in a viewer window
                 this.openImageViewer(item.name, url);
+            } else if (item.name.toLowerCase().endsWith('.pdf')) {
+                // Open PDF in viewer window
+                this.openPDFViewer(item.name, url);
             } else {
                 // Download other files
                 window.open(url, '_blank');
@@ -4773,6 +4821,67 @@ class DesktopOS {
                             loadFiles();
                         }
                     });
+                    
+                    // Add drop handlers for moving files into folders
+                    item.addEventListener('dragover', (e) => {
+                        if (e.dataTransfer.types.includes('application/hovercam-file')) {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            item.classList.add('drop-target');
+                        }
+                    });
+                    
+                    item.addEventListener('dragleave', () => {
+                        item.classList.remove('drop-target');
+                    });
+                    
+                    item.addEventListener('drop', async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        item.classList.remove('drop-target');
+                        
+                        const hovercamFile = e.dataTransfer.getData('application/hovercam-file');
+                        if (hovercamFile) {
+                            try {
+                                const fileData = JSON.parse(hovercamFile);
+                                const folderType = item.dataset.type;
+                                const folderName = item.dataset.path;
+                                
+                                let targetPath;
+                                let endpoint;
+                                
+                                if (folderType === 'shared-folder') {
+                                    // Moving to shared folder root
+                                    targetPath = '';
+                                    endpoint = '/shared/move';
+                                } else {
+                                    // Moving to a regular folder
+                                    targetPath = currentPath ? currentPath + '/' + folderName : folderName;
+                                    endpoint = isInSharedFolder ? '/shared/move' : '/files/move';
+                                }
+                                
+                                statusText.textContent = 'Moving: ' + fileData.name;
+                                
+                                const response = await self.api(endpoint, {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        sourceKey: fileData.key,
+                                        destinationFolder: targetPath
+                                    })
+                                });
+                                
+                                statusText.textContent = 'Moved: ' + fileData.name;
+                                await loadFiles();
+                                
+                                if (fileData.source === 'desktop') {
+                                    await self.renderDesktopIcons();
+                                }
+                            } catch (err) {
+                                console.error('Failed to move file:', err);
+                                statusText.textContent = 'Failed to move file';
+                            }
+                        }
+                    });
                 });
                 
                 // Add double-click handlers for files (images and PDFs)
@@ -5048,7 +5157,9 @@ class DesktopOS {
                     const fileData = JSON.parse(hovercamFile);
                     statusText.textContent = 'Moving: ' + fileData.name;
                     
-                    const response = await self.api('/files/move', {
+                    // Use appropriate endpoint for shared vs regular folders
+                    const endpoint = isInSharedFolder ? '/shared/move' : '/files/move';
+                    const response = await self.api(endpoint, {
                         method: 'POST',
                         body: JSON.stringify({
                             sourceKey: fileData.key,

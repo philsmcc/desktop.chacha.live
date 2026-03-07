@@ -2957,3 +2957,19 @@ body.dark-theme .wb-minimap {
 .notification-info svg {
     color: #3b82f6;
 }
+
+/* Folder drop target styling */
+.folder-item.drop-target {
+    background: rgba(59, 130, 246, 0.3);
+    border: 2px dashed #3b82f6;
+    border-radius: 8px;
+}
+
+.desktop-icon.drop-target,
+#desktop-icons.drop-target {
+    background: rgba(59, 130, 246, 0.2);
+}
+
+.dragging-file {
+    opacity: 0.5;
+}

@@ -691,6 +691,46 @@ app.post('/api/shared/folder', authenticateToken, async (req, res) => {
     }
 });
 
+// Move file to shared folder
+app.post('/api/shared/move', authenticateToken, async (req, res) => {
+    try {
+        const orgDomain = getOrgDomain(req.user.email);
+        
+        if (!orgDomain) {
+            return res.status(403).json({ error: 'Shared folders require organization email' });
+        }
+        
+        const { sourceKey, destinationFolder } = req.body;
+        if (!sourceKey) {
+            return res.status(400).json({ error: 'Source key is required' });
+        }
+        
+        const sharedPrefix = getSharedPrefix(orgDomain);
+        const fileName = sourceKey.split('/').pop();
+        const destKey = destinationFolder 
+            ? `${sharedPrefix}${destinationFolder}/${fileName}`
+            : `${sharedPrefix}${fileName}`;
+        
+        // Copy file to shared folder
+        await s3Client.send(new CopyObjectCommand({
+            Bucket: BUCKET,
+            CopySource: `${BUCKET}/${sourceKey}`,
+            Key: destKey
+        }));
+        
+        // Delete original
+        await s3Client.send(new DeleteObjectCommand({
+            Bucket: BUCKET,
+            Key: sourceKey
+        }));
+        
+        res.json({ message: 'File moved to shared folder', key: destKey });
+    } catch (error) {
+        console.error('Shared move error:', error);
+        res.status(500).json({ error: 'Failed to move file to shared folder' });
+    }
+});
+
 // Delete from shared folder
 app.delete('/api/shared', authenticateToken, async (req, res) => {
     try {
