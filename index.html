@@ -19,7 +19,7 @@
                 <button class="auth-tab active" data-tab="login">Sign In</button>
                 <button class="auth-tab" data-tab="register">Create Account</button>
             </div>
-            <form id="login-form" class="auth-form">
+            <form id="login-form" class="auth-form" method="post" action="javascript:void(0);" onsubmit="return false;">
                 <div class="form-group">
                     <label for="username">Email</label>
                     <input type="email" id="username" name="email" placeholder="Enter email address" required>
@@ -37,7 +37,7 @@
                 <div id="login-error" class="login-error"></div>
                 <button type="button" class="forgot-password-link" id="forgot-password-link">Forgot password?</button>
             </form>
-            <form id="forgot-password-form" class="auth-form hidden">
+            <form id="forgot-password-form" class="auth-form hidden" method="post" action="javascript:void(0);" onsubmit="return false;">
                 <div class="forgot-header">
                     <button type="button" class="back-arrow-btn" id="back-to-login-from-forgot">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -61,7 +61,7 @@
                 <div id="forgot-error" class="login-error"></div>
                 <div id="forgot-success" class="login-success hidden"></div>
             </form>
-            <form id="register-form" class="auth-form hidden">
+            <form id="register-form" class="auth-form hidden" method="post" action="javascript:void(0);" onsubmit="return false;">
                 <div class="form-group">
                     <label for="reg-username">Username</label>
                     <input type="text" id="reg-username" name="username" placeholder="Choose a username" required minlength="3">
@@ -191,6 +191,6 @@
     </div>
 
     <script async src="https://docs.opencv.org/4.9.0/opencv.js" onload="window.cvReady = true; console.log('OpenCV.js loaded');" id="opencv-script"></script>
-    <script src="app.js?v=49"></script>
+    <script src="app.js?v=50"></script>
 </body>
 </html>
