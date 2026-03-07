@@ -763,12 +763,14 @@ class DesktopOS {
         
         desktop.addEventListener('dragover', (e) => {
             // Check if it's a file from the Files app, camera snapshot, or external file
-            if (e.dataTransfer.types.includes('application/hovercam-file') ||
-                e.dataTransfer.types.includes('application/x-camera-snapshot') ||
-                e.dataTransfer.types.includes('text/uri-list') ||
-                e.dataTransfer.types.includes('Files')) {
+            const types = Array.from(e.dataTransfer.types);
+            
+            if (types.includes('application/hovercam-file') ||
+                types.includes('application/x-camera-snapshot') ||
+                types.includes('text/uri-list') ||
+                types.includes('Files')) {
                 e.preventDefault();
-                e.dataTransfer.dropEffect = 'copy';
+                e.dataTransfer.dropEffect = 'move';
                 desktop.classList.add('drop-target');
             }
         });
@@ -780,18 +782,19 @@ class DesktopOS {
         });
         
         desktop.addEventListener('drop', async (e) => {
+            e.preventDefault();
             desktop.classList.remove('drop-target');
             
             // Handle files from Files app
             const hovercamFile = e.dataTransfer.getData('application/hovercam-file');
+            
             if (hovercamFile) {
-                e.preventDefault();
                 try {
                     const fileData = JSON.parse(hovercamFile);
                     
                     // Only move if not already on desktop
                     if (fileData.source !== 'desktop') {
-                        const response = await this.api('/files/move', {
+                        const response = await self.api('/files/move', {
                             method: 'POST',
                             body: JSON.stringify({
                                 sourceKey: fileData.key,
@@ -800,10 +803,12 @@ class DesktopOS {
                         });
                         
                         // Refresh desktop icons
-                        await this.renderDesktopIcons();
+                        await self.renderDesktopIcons();
+                        self.showNotification('Moved to Desktop: ' + fileData.name, 'success');
                     }
                 } catch (err) {
                     console.error('Failed to move file to desktop:', err);
+                    self.showNotification('Failed to move file', 'error');
                 }
                 return;
             }
@@ -1006,11 +1011,14 @@ class DesktopOS {
                 }
                 
                 container.appendChild(icon);
-                this.makeIconDraggable(icon, 'file_' + item.name);
                 
-                // Make draggable for file transfers
+                // Use native drag API for file transfers
                 icon.setAttribute('draggable', 'true');
+                
+                let dragStartPos = null;
+                
                 icon.addEventListener('dragstart', (e) => {
+                    dragStartPos = { x: icon.offsetLeft, y: icon.offsetTop };
                     e.dataTransfer.setData('application/hovercam-file', JSON.stringify({
                         key: item.key,
                         name: item.name,
@@ -1019,9 +1027,40 @@ class DesktopOS {
                     }));
                     e.dataTransfer.effectAllowed = 'move';
                     icon.classList.add('dragging-file');
+                    
+                    // Create drag image
+                    const dragImage = icon.cloneNode(true);
+                    dragImage.style.position = 'absolute';
+                    dragImage.style.top = '-1000px';
+                    document.body.appendChild(dragImage);
+                    e.dataTransfer.setDragImage(dragImage, 40, 40);
+                    setTimeout(() => dragImage.remove(), 0);
                 });
-                icon.addEventListener('dragend', () => {
+                
+                icon.addEventListener('dragend', (e) => {
                     icon.classList.remove('dragging-file');
+                    
+                    // If dropped on desktop (not in a valid drop target), reposition the icon
+                    if (e.dataTransfer.dropEffect === 'none' && dragStartPos) {
+                        // Calculate new position based on where it was dropped
+                        const desktop = document.getElementById('desktop-icons');
+                        const rect = desktop.getBoundingClientRect();
+                        let newX = e.clientX - rect.left - 40;
+                        let newY = e.clientY - rect.top - 40;
+                        
+                        // Constrain to desktop bounds
+                        newX = Math.max(0, Math.min(newX, rect.width - 80));
+                        newY = Math.max(0, Math.min(newY, rect.height - 80));
+                        
+                        icon.style.left = newX + 'px';
+                        icon.style.top = newY + 'px';
+                        
+                        // Save position
+                        const iconId = 'file_' + item.name;
+                        this.iconPositions[iconId] = { x: newX, y: newY };
+                        this.saveIconPositions();
+                    }
+                    dragStartPos = null;
                 });
                 
                 // Double-click to open file
@@ -4839,8 +4878,8 @@ class DesktopOS {
                         e.preventDefault();
                         e.stopPropagation();
                         item.classList.remove('drop-target');
-                        
                         const hovercamFile = e.dataTransfer.getData('application/hovercam-file');
+                        
                         if (hovercamFile) {
                             try {
                                 const fileData = JSON.parse(hovercamFile);
@@ -4859,7 +4898,6 @@ class DesktopOS {
                                     targetPath = currentPath ? currentPath + '/' + folderName : folderName;
                                     endpoint = isInSharedFolder ? '/shared/move' : '/files/move';
                                 }
-                                
                                 statusText.textContent = 'Moving: ' + fileData.name;
                                 
                                 const response = await self.api(endpoint, {
@@ -4869,7 +4907,6 @@ class DesktopOS {
                                         destinationFolder: targetPath
                                     })
                                 });
-                                
                                 statusText.textContent = 'Moved: ' + fileData.name;
                                 await loadFiles();
                                 
@@ -4920,13 +4957,14 @@ class DesktopOS {
                         const isImage = fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i);
                         
                         // Set file move data for all files
-                        e.dataTransfer.setData('application/hovercam-file', JSON.stringify({
+                        const fileData = {
                             key: filePath,
                             name: fileName,
                             type: isImage ? 'image' : 'file',
                             source: 'files',
                             sourceFolder: currentPath
-                        }));
+                        };
+                        e.dataTransfer.setData('application/hovercam-file', JSON.stringify(fileData));
                         e.dataTransfer.effectAllowed = 'move';
                         item.classList.add('dragging');
                         
@@ -4941,7 +4979,7 @@ class DesktopOS {
                         }
                     });
                     
-                    item.addEventListener('dragend', () => {
+                    item.addEventListener('dragend', (e) => {
                         item.classList.remove('dragging');
                     });
                 });
