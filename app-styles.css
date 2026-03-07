@@ -5083,49 +5083,67 @@ button.search-btn.ai {
 
 /* Export container styles */
 .export-container {
-    padding: 20px;
+    padding: 15px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    height: 100%;
+    gap: 15px;
+}
+
+.export-preview {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg-darker);
+    border-radius: 10px;
+    padding: 15px;
+    border: 1px solid var(--border-color);
 }
 
 .export-options {
     background: var(--bg-card);
-    padding: 20px;
+    padding: 15px 20px;
     border-radius: 12px;
     border: 1px solid var(--border-color);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 20px;
 }
 
 .export-options h4 {
-    margin: 0 0 15px 0;
+    margin: 0;
     color: var(--text-primary);
+    font-size: 14px;
+    white-space: nowrap;
 }
 
 .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 12px;
+    gap: 8px;
+    margin: 0;
     cursor: pointer;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 13px;
+    white-space: nowrap;
 }
 
 .checkbox-label input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     accent-color: #f57c00;
 }
 
 .export-buttons {
     display: flex;
-    gap: 15px;
-    margin-top: 20px;
+    gap: 10px;
+    margin-left: auto;
 }
 
 .export-note {
-    margin-top: 15px;
-    padding: 10px;
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px 15px;
     background: var(--bg-darker);
     border-radius: 8px;
     color: var(--text-secondary);
