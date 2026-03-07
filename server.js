@@ -1640,6 +1640,15 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
                 recent.map(h => `${h.role}: ${h.content}`).join('\n');
         }
 
+        // Build lesson history context (for suggesting what to learn next)
+        let lessonHistoryContext = '';
+        if (userContext.lessonHistory && userContext.lessonHistory.length > 0) {
+            const recentLessons = userContext.lessonHistory.slice(0, 5);
+            lessonHistoryContext = '\n\nRecent lessons this teacher has created:\n' + 
+                recentLessons.map(l => `- ${l.subject} (${l.grade}): "${l.topic}" on ${new Date(l.date).toLocaleDateString()}`).join('\n') +
+                '\n\nYou can suggest related topics or next lessons based on this history.';
+        }
+
         // Build the full prompt
         const systemPrompt = settings.system_prompt || 'You are a helpful assistant.';
         const productInfo = settings.product_info || '';
@@ -1650,6 +1659,7 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
 ${productInfo ? `\n${productInfo}\n` : ''}
 ${userGreeting}
 ${memoryContext}
+${lessonHistoryContext}
 ${recentHistory}
 
 User: ${message}
@@ -2153,26 +2163,46 @@ Please create an engaging, comprehensive lesson plan in the JSON format specifie
              lessonData.standard, lessonData.duration, JSON.stringify(lessonPlan)]
         );
         
-        // Update teacher context with recent topic
+        // Update teacher context with lesson metadata (shared with ChaCha terminal)
         try {
             const prefix = getUserPrefix(req.user.email);
-            const lessonContextKey = `${prefix}/lesson-context.json`;
             
-            let lessonContext = { recentTopics: [], lastGenerated: null };
+            // Update the ChaCha context file so terminal can access lesson history
+            const chachaContextKey = `${prefix}/chacha-context.json`;
+            let chachaContext = { memories: [], conversationHistory: [], lessonHistory: [] };
+            
             try {
-                const getCmd = new GetObjectCommand({ Bucket: BUCKET, Key: lessonContextKey });
+                const getCmd = new GetObjectCommand({ Bucket: BUCKET, Key: chachaContextKey });
                 const response = await s3Client.send(getCmd);
                 const contextStr = await response.Body.transformToString();
-                lessonContext = JSON.parse(contextStr);
+                chachaContext = JSON.parse(contextStr);
             } catch (e) {}
             
-            lessonContext.recentTopics = [lessonData.topic, ...(lessonContext.recentTopics || [])].slice(0, 20);
-            lessonContext.lastGenerated = new Date().toISOString();
+            // Add lesson metadata (NOT the full plan, just details)
+            const lessonMeta = {
+                subject: lessonData.subject,
+                grade: lessonData.grade,
+                topic: lessonData.topic,
+                standard: lessonData.standard,
+                duration: lessonData.duration,
+                title: lessonPlan.title,
+                objectives: lessonPlan.objectives?.slice(0, 3) || [], // Just first 3 objectives
+                date: new Date().toISOString()
+            };
+            
+            // Keep lesson history (last 20 lessons)
+            chachaContext.lessonHistory = [lessonMeta, ...(chachaContext.lessonHistory || [])].slice(0, 20);
+            
+            // Add a memory about this lesson for ChaCha to reference
+            const lessonMemory = `Teacher created a ${lessonData.grade} ${lessonData.subject} lesson on "${lessonData.topic}" on ${new Date().toLocaleDateString()}`;
+            if (!chachaContext.memories.includes(lessonMemory)) {
+                chachaContext.memories = [lessonMemory, ...(chachaContext.memories || [])].slice(0, 50);
+            }
             
             await s3Client.send(new PutObjectCommand({
                 Bucket: BUCKET,
-                Key: lessonContextKey,
-                Body: JSON.stringify(lessonContext),
+                Key: chachaContextKey,
+                Body: JSON.stringify(chachaContext),
                 ContentType: 'application/json'
             }));
         } catch (e) {
@@ -2264,6 +2294,11 @@ app.post('/api/lesson/export-pdf', authenticateToken, async (req, res) => {
 function generateLessonPDF(plan, includedSections, options) {
     const sections = [];
     
+    // Convert camelCase to Title Case
+    const camelToTitle = (str) => {
+        return str.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+    };
+    
     // Helper to add section if included
     const addSection = (key, title, content) => {
         if (!includedSections || includedSections[key]) {
@@ -2282,7 +2317,7 @@ function generateLessonPDF(plan, includedSections, options) {
         }
         if (typeof content === 'object' && content !== null) {
             return Object.entries(content).map(([key, value]) => 
-                `<p><strong>${key}:</strong> ${Array.isArray(value) ? value.join(', ') : value}</p>`
+                `<p><strong>${camelToTitle(key)}:</strong> ${Array.isArray(value) ? value.join(', ') : value}</p>`
             ).join('');
         }
         return `<p>${content}</p>`;

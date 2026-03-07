@@ -6417,9 +6417,14 @@ Start by introducing yourself warmly and asking their name if you don't know it 
             });
         }
         
+        // Convert camelCase to Title Case (e.g., "technologyIntegration" -> "Technology Integration")
+        function camelToTitle(str) {
+            return str.replace(/([A-Z])/g, ' $1').replace(/^./, function(s) { return s.toUpperCase(); }).trim();
+        }
+        
         function formatSectionContent(key, content) {
             if (Array.isArray(content)) return '<ul>' + content.map(item => '<li>' + item + '</li>').join('') + '</ul>';
-            if (typeof content === 'object') return '<div class="content-block">' + Object.entries(content).map(([k, v]) => '<div class="content-item"><strong>' + k + ':</strong> ' + (Array.isArray(v) ? v.join(', ') : v) + '</div>').join('') + '</div>';
+            if (typeof content === 'object') return '<div class="content-block">' + Object.entries(content).map(([k, v]) => '<div class="content-item"><strong>' + camelToTitle(k) + ':</strong> ' + (Array.isArray(v) ? v.join(', ') : v) + '</div>').join('') + '</div>';
             return '<div class="content-text">' + content + '</div>';
         }
         
