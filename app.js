@@ -35,7 +35,7 @@ class DesktopOS {
     ];
 
     defineApps() {
-        return [
+        const baseApps = [
             {
                 id: "whiteboard",
                 name: "Whiteboard",
@@ -87,6 +87,24 @@ class DesktopOS {
                 content: () => this.renderSettingsApp()
             }
         ];
+        
+        // Admin-only apps
+        const adminApps = [
+            {
+                id: "usermanager",
+                name: "User Manager",
+                icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+                defaultSize: { width: 1000, height: 700 },
+                content: () => this.renderUserManagerApp(),
+                adminOnly: true
+            }
+        ];
+        
+        // Return base apps + admin apps if user is super admin
+        if (this.currentUser && this.currentUser.isSuperAdmin) {
+            return [...baseApps, ...adminApps];
+        }
+        return baseApps;
     }
 
     async init() {
@@ -748,6 +766,9 @@ class DesktopOS {
         document.getElementById("login-screen").classList.add("hidden");
         document.getElementById("desktop").classList.remove("hidden");
         document.getElementById("current-user").textContent = this.currentUser.displayName || this.currentUser.username;
+        
+        // Refresh apps list to include admin apps if user is super admin
+        this.apps = this.defineApps();
         
         this.renderTaskbar();
         this.renderDesktopIcons();
@@ -1436,6 +1457,10 @@ class DesktopOS {
         
         if (appId === "camera") {
             setTimeout(() => this.initCamera(windowEl), 50);
+        }
+        
+        if (appId === "usermanager") {
+            setTimeout(() => this.initUserManager(windowEl), 50);
         }
     }
 
@@ -5561,6 +5586,345 @@ class DesktopOS {
             '</div>' +
         '</div>';
     }
+
+    
+    renderUserManagerApp() {
+        const self = this;
+        
+        return '<div class="user-manager-app">' +
+            '<div class="admin-header">' +
+                '<h2>User Manager</h2>' +
+                '<div class="admin-tabs">' +
+                    '<button class="admin-tab active" data-tab="users">Users</button>' +
+                    '<button class="admin-tab" data-tab="domains">Domains</button>' +
+                    '<button class="admin-tab" data-tab="stats">Stats</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="admin-content">' +
+                '<div class="admin-panel active" data-panel="users">' +
+                    '<div class="search-bar">' +
+                        '<input type="text" id="user-search" placeholder="Search users by email or name...">' +
+                        '<select id="tier-filter">' +
+                            '<option value="">All Tiers</option>' +
+                            '<option value="free">Free</option>' +
+                            '<option value="premium">Premium</option>' +
+                            '<option value="enterprise">Enterprise</option>' +
+                        '</select>' +
+                        '<button id="search-btn" class="admin-btn">Search</button>' +
+                    '</div>' +
+                    '<div class="users-table-container">' +
+                        '<table class="users-table">' +
+                            '<thead>' +
+                                '<tr>' +
+                                    '<th>User</th>' +
+                                    '<th>Email</th>' +
+                                    '<th>Domain</th>' +
+                                    '<th>Tier</th>' +
+                                    '<th>Admin</th>' +
+                                    '<th>Actions</th>' +
+                                '</tr>' +
+                            '</thead>' +
+                            '<tbody id="users-tbody"></tbody>' +
+                        '</table>' +
+                    '</div>' +
+                    '<div class="pagination" id="users-pagination"></div>' +
+                '</div>' +
+                '<div class="admin-panel" data-panel="domains">' +
+                    '<div class="domains-grid" id="domains-grid"></div>' +
+                '</div>' +
+                '<div class="admin-panel" data-panel="stats">' +
+                    '<div class="stats-grid" id="stats-grid"></div>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
+    }
+    
+    initUserManager(windowEl) {
+        const self = this;
+        let currentPage = 1;
+        const limit = 20;
+        
+        // Tab switching
+        windowEl.querySelectorAll('.admin-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                windowEl.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+                windowEl.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                windowEl.querySelector('[data-panel="' + tab.dataset.tab + '"]').classList.add('active');
+                
+                if (tab.dataset.tab === 'domains') loadDomains();
+                if (tab.dataset.tab === 'stats') loadStats();
+            });
+        });
+        
+        // Search functionality
+        const searchBtn = windowEl.querySelector('#search-btn');
+        const searchInput = windowEl.querySelector('#user-search');
+        const tierFilter = windowEl.querySelector('#tier-filter');
+        
+        searchBtn.addEventListener('click', () => {
+            currentPage = 1;
+            loadUsers();
+        });
+        
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                currentPage = 1;
+                loadUsers();
+            }
+        });
+        
+        tierFilter.addEventListener('change', () => {
+            currentPage = 1;
+            loadUsers();
+        });
+        
+        async function loadUsers() {
+            const tbody = windowEl.querySelector('#users-tbody');
+            const pagination = windowEl.querySelector('#users-pagination');
+            const search = searchInput.value;
+            const tier = tierFilter.value;
+            
+            try {
+                const params = new URLSearchParams();
+                if (search) params.append('search', search);
+                if (tier) params.append('tier', tier);
+                params.append('page', currentPage);
+                params.append('limit', limit);
+                
+                const response = await self.api('/admin/users?' + params.toString());
+                
+                tbody.innerHTML = response.users.map(user => {
+                    const domain = user.email.split('@')[1];
+                    return '<tr>' +
+                        '<td>' +
+                            '<div class="user-cell">' +
+                                '<div class="user-avatar-small">' + (user.display_name || user.username || 'U').charAt(0).toUpperCase() + '</div>' +
+                                '<span>' + (user.display_name || user.username || '-') + '</span>' +
+                            '</div>' +
+                        '</td>' +
+                        '<td>' + user.email + '</td>' +
+                        '<td>' + domain + '</td>' +
+                        '<td><span class="tier-badge tier-' + (user.subscription_tier || 'free') + '">' + (user.subscription_tier || 'free') + '</span></td>' +
+                        '<td>' + (user.is_super_admin ? '<span class="admin-badge">Admin</span>' : '-') + '</td>' +
+                        '<td>' +
+                            '<button class="action-btn edit-btn" data-user-id="' + user.id + '" title="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
+                            '<button class="action-btn delete-btn" data-user-id="' + user.id + '" data-email="' + user.email + '" title="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>' +
+                        '</td>' +
+                    '</tr>';
+                }).join('');
+                
+                // Add edit/delete handlers
+                tbody.querySelectorAll('.edit-btn').forEach(btn => {
+                    btn.addEventListener('click', () => editUser(btn.dataset.userId));
+                });
+                
+                tbody.querySelectorAll('.delete-btn').forEach(btn => {
+                    btn.addEventListener('click', () => deleteUser(btn.dataset.userId, btn.dataset.email));
+                });
+                
+                // Pagination
+                const { page, pages, total } = response.pagination;
+                pagination.innerHTML = '<span>Page ' + page + ' of ' + pages + ' (' + total + ' users)</span>' +
+                    '<div class="page-btns">' +
+                        '<button class="page-btn" ' + (page <= 1 ? 'disabled' : '') + ' data-page="' + (page - 1) + '">Prev</button>' +
+                        '<button class="page-btn" ' + (page >= pages ? 'disabled' : '') + ' data-page="' + (page + 1) + '">Next</button>' +
+                    '</div>';
+                
+                pagination.querySelectorAll('.page-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        if (!btn.disabled) {
+                            currentPage = parseInt(btn.dataset.page);
+                            loadUsers();
+                        }
+                    });
+                });
+                
+            } catch (error) {
+                console.error('Failed to load users:', error);
+                tbody.innerHTML = '<tr><td colspan="6">Failed to load users</td></tr>';
+            }
+        }
+        
+        async function loadDomains() {
+            const grid = windowEl.querySelector('#domains-grid');
+            
+            try {
+                const response = await self.api('/admin/domains');
+                
+                grid.innerHTML = response.domains.map(domain => {
+                    const sub = response.domainSubscriptions.find(s => s.domain === domain.domain);
+                    return '<div class="domain-card">' +
+                        '<div class="domain-header">' +
+                            '<h3>' + domain.domain + '</h3>' +
+                            '<span class="tier-badge tier-' + (sub?.subscription_tier || 'free') + '">' + (sub?.subscription_tier || 'free') + '</span>' +
+                        '</div>' +
+                        '<div class="domain-stats">' +
+                            '<div class="stat"><span class="stat-value">' + domain.user_count + '</span><span class="stat-label">Users</span></div>' +
+                            '<div class="stat"><span class="stat-value">' + domain.premium_count + '</span><span class="stat-label">Premium</span></div>' +
+                            '<div class="stat"><span class="stat-value">' + domain.free_count + '</span><span class="stat-label">Free</span></div>' +
+                        '</div>' +
+                        '<div class="domain-actions">' +
+                            '<button class="admin-btn" onclick="window.desktopOS.editDomain(\''+domain.domain+'\')">Manage</button>' +
+                        '</div>' +
+                    '</div>';
+                }).join('');
+                
+            } catch (error) {
+                console.error('Failed to load domains:', error);
+                grid.innerHTML = '<div class="error">Failed to load domains</div>';
+            }
+        }
+        
+        async function loadStats() {
+            const grid = windowEl.querySelector('#stats-grid');
+            
+            try {
+                const response = await self.api('/admin/stats');
+                
+                grid.innerHTML = '<div class="stats-cards">' +
+                    '<div class="stat-card">' +
+                        '<div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>' +
+                        '<div class="stat-info"><span class="stat-value">' + response.totalUsers + '</span><span class="stat-label">Total Users</span></div>' +
+                    '</div>' +
+                    '<div class="stat-card">' +
+                        '<div class="stat-icon premium"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>' +
+                        '<div class="stat-info"><span class="stat-value">' + response.premiumUsers + '</span><span class="stat-label">Premium Users</span></div>' +
+                    '</div>' +
+                    '<div class="stat-card">' +
+                        '<div class="stat-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg></div>' +
+                        '<div class="stat-info"><span class="stat-value">' + response.totalDomains + '</span><span class="stat-label">Domains</span></div>' +
+                    '</div>' +
+                    '<div class="stat-card">' +
+                        '<div class="stat-icon admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>' +
+                        '<div class="stat-info"><span class="stat-value">' + response.adminUsers + '</span><span class="stat-label">Admins</span></div>' +
+                    '</div>' +
+                '</div>';
+                
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+                grid.innerHTML = '<div class="error">Failed to load stats</div>';
+            }
+        }
+        
+        async function editUser(userId) {
+            const response = await self.api('/admin/users?search=' + userId);
+            const user = response.users.find(u => u.id == userId);
+            if (!user) return;
+            
+            const modal = document.createElement('div');
+            modal.className = 'admin-modal';
+            modal.innerHTML = '<div class="modal-content">' +
+                '<h3>Edit User: ' + user.email + '</h3>' +
+                '<div class="modal-form">' +
+                    '<label>Display Name</label>' +
+                    '<input type="text" id="edit-display-name" value="' + (user.display_name || '') + '">' +
+                    '<label>Title</label>' +
+                    '<input type="text" id="edit-title" value="' + (user.title || '') + '">' +
+                    '<label>Subscription Tier</label>' +
+                    '<select id="edit-tier">' +
+                        '<option value="free"' + (user.subscription_tier === 'free' ? ' selected' : '') + '>Free</option>' +
+                        '<option value="premium"' + (user.subscription_tier === 'premium' ? ' selected' : '') + '>Premium</option>' +
+                        '<option value="enterprise"' + (user.subscription_tier === 'enterprise' ? ' selected' : '') + '>Enterprise</option>' +
+                    '</select>' +
+                    '<label><input type="checkbox" id="edit-admin"' + (user.is_super_admin ? ' checked' : '') + '> Super Admin</label>' +
+                '</div>' +
+                '<div class="modal-actions">' +
+                    '<button class="admin-btn cancel">Cancel</button>' +
+                    '<button class="admin-btn save">Save</button>' +
+                '</div>' +
+            '</div>';
+            
+            windowEl.appendChild(modal);
+            
+            modal.querySelector('.cancel').addEventListener('click', () => modal.remove());
+            modal.querySelector('.save').addEventListener('click', async () => {
+                try {
+                    await self.api('/admin/users/' + userId, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            display_name: modal.querySelector('#edit-display-name').value,
+                            title: modal.querySelector('#edit-title').value,
+                            subscription_tier: modal.querySelector('#edit-tier').value,
+                            is_super_admin: modal.querySelector('#edit-admin').checked
+                        })
+                    });
+                    modal.remove();
+                    loadUsers();
+                    self.showNotification('User updated successfully');
+                } catch (error) {
+                    self.showNotification('Failed to update user: ' + error.message, 'error');
+                }
+            });
+        }
+        
+        async function deleteUser(userId, email) {
+            if (!confirm('Delete user ' + email + '? This cannot be undone.')) return;
+            
+            try {
+                await self.api('/admin/users/' + userId, { method: 'DELETE' });
+                loadUsers();
+                self.showNotification('User deleted');
+            } catch (error) {
+                self.showNotification('Failed to delete user: ' + error.message, 'error');
+            }
+        }
+        
+        // Initial load
+        loadUsers();
+    }
+    
+    editDomain(domain) {
+        const self = this;
+        const modal = document.createElement('div');
+        modal.className = 'admin-modal';
+        modal.innerHTML = '<div class="modal-content">' +
+            '<h3>Manage Domain: ' + domain + '</h3>' +
+            '<div class="modal-form">' +
+                '<label>Subscription Tier</label>' +
+                '<select id="domain-tier">' +
+                    '<option value="free">Free</option>' +
+                    '<option value="premium">Premium</option>' +
+                    '<option value="enterprise">Enterprise</option>' +
+                '</select>' +
+                '<label>Max Users (optional)</label>' +
+                '<input type="number" id="domain-max-users" placeholder="Leave empty for unlimited">' +
+                '<label>Contact Email</label>' +
+                '<input type="email" id="domain-contact-email" placeholder="billing@domain.com">' +
+                '<label>Contact Name</label>' +
+                '<input type="text" id="domain-contact-name" placeholder="John Doe">' +
+                '<label>Notes</label>' +
+                '<textarea id="domain-notes" placeholder="Internal notes..."></textarea>' +
+            '</div>' +
+            '<div class="modal-actions">' +
+                '<button class="admin-btn cancel">Cancel</button>' +
+                '<button class="admin-btn save">Save</button>' +
+            '</div>' +
+        '</div>';
+        
+        document.body.appendChild(modal);
+        
+        modal.querySelector('.cancel').addEventListener('click', () => modal.remove());
+        modal.querySelector('.save').addEventListener('click', async () => {
+            try {
+                await self.api('/admin/domains/' + encodeURIComponent(domain), {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        subscription_tier: modal.querySelector('#domain-tier').value,
+                        max_users: modal.querySelector('#domain-max-users').value || null,
+                        contact_email: modal.querySelector('#domain-contact-email').value || null,
+                        contact_name: modal.querySelector('#domain-contact-name').value || null,
+                        notes: modal.querySelector('#domain-notes').value || null
+                    })
+                });
+                modal.remove();
+                self.showNotification('Domain subscription updated');
+            } catch (error) {
+                self.showNotification('Failed to update domain: ' + error.message, 'error');
+            }
+        });
+    }
+
 }
 
 // Initialize

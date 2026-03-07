@@ -83,6 +83,25 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+// Admin-only middleware - must be used AFTER authenticateToken
+const requireAdmin = async (req, res, next) => {
+    try {
+        // Check is_super_admin from JWT first (for speed)
+        if (req.user.is_super_admin) {
+            return next();
+        }
+        // Double-check against database for security
+        const result = await pool.query('SELECT is_super_admin FROM users WHERE id = $1', [req.user.id]);
+        if (result.rows.length > 0 && result.rows[0].is_super_admin) {
+            return next();
+        }
+        return res.status(403).json({ error: 'Admin access required' });
+    } catch (error) {
+        console.error('Admin check error:', error);
+        return res.status(500).json({ error: 'Authorization check failed' });
+    }
+};
+
 // Helpers
 const getUserPrefix = (email) => `users/${email.replace('@', '_at_').replace(/\./g, '_')}`;
 const getDefaultPreferences = () => ({
@@ -338,7 +357,7 @@ app.post('/api/auth/login', async (req, res) => {
         
         if (!validPassword) return res.status(401).json({ error: 'Invalid email or password' });
 
-        const token = jwt.sign({ email: emailLower, id: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ email: emailLower, id: user.id, is_super_admin: user.is_super_admin || false }, process.env.JWT_SECRET, { expiresIn: '7d' });
         
         await pool.query('UPDATE users SET updated_at = NOW() WHERE id = $1', [user.id]);
         
@@ -352,7 +371,9 @@ app.post('/api/auth/login', async (req, res) => {
                 email: user.email,
                 displayName: user.display_name || '',
                 title: user.title || '',
-                organization: orgDomain ? { domain: orgDomain, hasSharedFolder: true } : null
+                organization: orgDomain ? { domain: orgDomain, hasSharedFolder: true } : null,
+                isSuperAdmin: user.is_super_admin || false,
+                subscriptionTier: user.subscription_tier || 'free'
             } 
         });
     } catch (error) {
@@ -1227,6 +1248,250 @@ app.get('/api/wallpapers/url', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Wallpaper URL error:', error);
         res.status(500).json({ error: 'Failed to get wallpaper URL' });
+    }
+});
+
+// Health check
+// ==================== ADMIN API ROUTES ====================
+
+// Get all users (admin only)
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { domain, tier, search, page = 1, limit = 50 } = req.query;
+        const offset = (page - 1) * limit;
+        
+        let query = `
+            SELECT id, username, email, display_name, title, email_verified, 
+                   is_super_admin, subscription_tier, subscription_expires_at,
+                   created_at, updated_at
+            FROM users
+            WHERE 1=1
+        `;
+        const params = [];
+        let paramIndex = 1;
+        
+        if (domain) {
+            query += ` AND email LIKE $${paramIndex}`;
+            params.push(`%@${domain}`);
+            paramIndex++;
+        }
+        
+        if (tier) {
+            query += ` AND subscription_tier = $${paramIndex}`;
+            params.push(tier);
+            paramIndex++;
+        }
+        
+        if (search) {
+            query += ` AND (email ILIKE $${paramIndex} OR display_name ILIKE $${paramIndex} OR username ILIKE $${paramIndex})`;
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+        
+        // Get total count
+        const countResult = await pool.query(
+            query.replace('SELECT id, username, email, display_name, title, email_verified, is_super_admin, subscription_tier, subscription_expires_at, created_at, updated_at', 'SELECT COUNT(*)'),
+            params
+        );
+        const total = parseInt(countResult.rows[0].count);
+        
+        // Get paginated results
+        query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        params.push(limit, offset);
+        
+        const result = await pool.query(query, params);
+        
+        res.json({
+            users: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Admin get users error:', error);
+        res.status(500).json({ error: 'Failed to get users' });
+    }
+});
+
+// Get user stats by domain (admin only)
+app.get('/api/admin/domains', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                SUBSTRING(email FROM POSITION('@' IN email) + 1) as domain,
+                COUNT(*) as user_count,
+                COUNT(*) FILTER (WHERE subscription_tier = 'premium') as premium_count,
+                COUNT(*) FILTER (WHERE subscription_tier = 'free') as free_count,
+                MIN(created_at) as first_user_at,
+                MAX(created_at) as last_user_at
+            FROM users
+            GROUP BY SUBSTRING(email FROM POSITION('@' IN email) + 1)
+            ORDER BY user_count DESC
+        `);
+        
+        // Get domain subscriptions
+        const domainSubs = await pool.query('SELECT * FROM domain_subscriptions ORDER BY domain');
+        
+        res.json({
+            domains: result.rows,
+            domainSubscriptions: domainSubs.rows
+        });
+    } catch (error) {
+        console.error('Admin get domains error:', error);
+        res.status(500).json({ error: 'Failed to get domain stats' });
+    }
+});
+
+// Update user (admin only)
+app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { subscription_tier, subscription_expires_at, is_super_admin, display_name, title } = req.body;
+        
+        const updates = [];
+        const params = [];
+        let paramIndex = 1;
+        
+        if (subscription_tier !== undefined) {
+            updates.push(`subscription_tier = $${paramIndex}`);
+            params.push(subscription_tier);
+            paramIndex++;
+        }
+        
+        if (subscription_expires_at !== undefined) {
+            updates.push(`subscription_expires_at = $${paramIndex}`);
+            params.push(subscription_expires_at);
+            paramIndex++;
+        }
+        
+        if (is_super_admin !== undefined) {
+            updates.push(`is_super_admin = $${paramIndex}`);
+            params.push(is_super_admin);
+            paramIndex++;
+        }
+        
+        if (display_name !== undefined) {
+            updates.push(`display_name = $${paramIndex}`);
+            params.push(display_name);
+            paramIndex++;
+        }
+        
+        if (title !== undefined) {
+            updates.push(`title = $${paramIndex}`);
+            params.push(title);
+            paramIndex++;
+        }
+        
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+        
+        updates.push(`updated_at = NOW()`);
+        params.push(id);
+        
+        const query = `UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
+        const result = await pool.query(query, params);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        res.json({ message: 'User updated', user: result.rows[0] });
+    } catch (error) {
+        console.error('Admin update user error:', error);
+        res.status(500).json({ error: 'Failed to update user' });
+    }
+});
+
+// Delete user (admin only)
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Don't allow deleting yourself
+        if (parseInt(id) === req.user.id) {
+            return res.status(400).json({ error: 'Cannot delete your own account' });
+        }
+        
+        const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING email', [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        res.json({ message: 'User deleted', email: result.rows[0].email });
+    } catch (error) {
+        console.error('Admin delete user error:', error);
+        res.status(500).json({ error: 'Failed to delete user' });
+    }
+});
+
+// Set domain subscription (admin only)
+app.put('/api/admin/domains/:domain', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { domain } = req.params;
+        const { subscription_tier, max_users, contact_email, contact_name, notes, expires_at } = req.body;
+        
+        const result = await pool.query(`
+            INSERT INTO domain_subscriptions (domain, subscription_tier, max_users, contact_email, contact_name, notes, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (domain) DO UPDATE SET
+                subscription_tier = COALESCE($2, domain_subscriptions.subscription_tier),
+                max_users = COALESCE($3, domain_subscriptions.max_users),
+                contact_email = COALESCE($4, domain_subscriptions.contact_email),
+                contact_name = COALESCE($5, domain_subscriptions.contact_name),
+                notes = COALESCE($6, domain_subscriptions.notes),
+                expires_at = COALESCE($7, domain_subscriptions.expires_at),
+                updated_at = NOW()
+            RETURNING *
+        `, [domain, subscription_tier, max_users, contact_email, contact_name, notes, expires_at]);
+        
+        // Update all users on this domain to the new tier
+        if (subscription_tier) {
+            await pool.query(`
+                UPDATE users SET subscription_tier = $1, subscription_expires_at = $2
+                WHERE email LIKE $3
+            `, [subscription_tier, expires_at, `%@${domain}`]);
+        }
+        
+        res.json({ message: 'Domain subscription updated', domainSubscription: result.rows[0] });
+    } catch (error) {
+        console.error('Admin update domain error:', error);
+        res.status(500).json({ error: 'Failed to update domain subscription' });
+    }
+});
+
+// Get admin dashboard stats (admin only)
+app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const stats = await pool.query(`
+            SELECT 
+                COUNT(*) as total_users,
+                COUNT(*) FILTER (WHERE subscription_tier = 'premium') as premium_users,
+                COUNT(*) FILTER (WHERE subscription_tier = 'free') as free_users,
+                COUNT(*) FILTER (WHERE is_super_admin = true) as admin_users,
+                COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '7 days') as new_users_week,
+                COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '30 days') as new_users_month,
+                COUNT(DISTINCT SUBSTRING(email FROM POSITION('@' IN email) + 1)) as unique_domains
+            FROM users
+        `);
+        
+        const domainStats = await pool.query(`
+            SELECT COUNT(*) as total_domain_subscriptions,
+                   COUNT(*) FILTER (WHERE subscription_tier = 'premium') as premium_domains
+            FROM domain_subscriptions
+        `);
+        
+        res.json({
+            ...stats.rows[0],
+            ...domainStats.rows[0]
+        });
+    } catch (error) {
+        console.error('Admin stats error:', error);
+        res.status(500).json({ error: 'Failed to get stats' });
     }
 });
 
