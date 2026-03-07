@@ -2702,3 +2702,56 @@ body.dark-theme .wb-minimap {
     0%, 100% { border-color: rgba(16, 185, 129, 0.5); }
     50% { border-color: rgba(16, 185, 129, 0.8); }
 }
+
+/* Smart Mode Controls Layout */
+.smart-mode-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+/* Lock Button */
+.smart-lock-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: #374151;
+    border: 1px solid #4b5563;
+    border-radius: 6px;
+    color: #9ca3af;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.smart-lock-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.smart-lock-btn:hover {
+    background: #4b5563;
+    color: white;
+}
+
+.smart-lock-btn.active {
+    background: #f59e0b;
+    border-color: #f59e0b;
+    color: white;
+}
+
+.smart-lock-btn.active:hover {
+    background: #d97706;
+    border-color: #d97706;
+}
+
+/* Lock description */
+.smart-lock-desc {
+    font-size: 11px;
+    color: #f59e0b;
+    margin: 4px 0 0 0;
+    line-height: 1.4;
+    font-weight: 500;
+}

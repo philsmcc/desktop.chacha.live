@@ -3401,11 +3401,16 @@ class DesktopOS {
         let smartModeEnabled = false;
         let smartModeAnimationFrame = null;
         let detectedCorners = null;
+        let lockedCorners = null;  // Stores corners when locked
+        let cornersLocked = false; // Lock state
         const overlayCanvas = app.querySelector('.camera-overlay-canvas');
         const overlayCtx = overlayCanvas ? overlayCanvas.getContext('2d') : null;
         const smartToggle = app.querySelector('.camera-smart-toggle');
         const smartStatus = app.querySelector('.smart-mode-status');
         const smartBadge = app.querySelector('.camera-smart-badge');
+        const smartLockBtn = app.querySelector('.smart-lock-btn');
+        const smartLockDesc = app.querySelector('.smart-lock-desc');
+        const smartModeDesc = app.querySelector('.smart-mode-desc');
         
         // 8.5 x 11 aspect ratio (letter size)
         const LETTER_ASPECT = 8.5 / 11;
@@ -4197,11 +4202,10 @@ class DesktopOS {
             }
             
             try {
-                // Create temporary canvas for processing at lower resolution
+                // Create temporary canvas for processing at full resolution (for transform quality)
                 const tempCanvas = document.createElement('canvas');
-                const scale = 0.5; // Process at half resolution for speed
-                tempCanvas.width = video.videoWidth * scale;
-                tempCanvas.height = video.videoHeight * scale;
+                tempCanvas.width = video.videoWidth;
+                tempCanvas.height = video.videoHeight;
                 const tempCtx = tempCanvas.getContext('2d');
                 
                 // Apply mirroring if needed
@@ -4212,22 +4216,50 @@ class DesktopOS {
                 
                 tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
                 
-                // Get image data
+                // Get image data at full resolution for transform
                 const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
                 const src = cv.matFromImageData(imageData);
                 
-                // Detect corners
-                const corners = detectDocumentCorners(src);
+                // Use locked corners if available, otherwise detect
+                let cornersToUse = null;
                 
-                if (corners) {
-                    // Scale corners back to full resolution
-                    detectedCorners = corners.map(c => ({
-                        x: c.x / scale,
-                        y: c.y / scale
-                    }));
+                if (cornersLocked && lockedCorners) {
+                    // Use the locked corners (already at full resolution)
+                    cornersToUse = lockedCorners;
+                    detectedCorners = lockedCorners;
+                } else {
+                    // Detect corners using lower resolution for speed
+                    const detectScale = 0.5;
+                    const detectCanvas = document.createElement('canvas');
+                    detectCanvas.width = video.videoWidth * detectScale;
+                    detectCanvas.height = video.videoHeight * detectScale;
+                    const detectCtx = detectCanvas.getContext('2d');
                     
-                    // Apply perspective transform for live preview
-                    const transformed = applyPerspectiveTransform(src, corners);
+                    if (mirrored) {
+                        detectCtx.translate(detectCanvas.width, 0);
+                        detectCtx.scale(-1, 1);
+                    }
+                    detectCtx.drawImage(video, 0, 0, detectCanvas.width, detectCanvas.height);
+                    
+                    const detectImageData = detectCtx.getImageData(0, 0, detectCanvas.width, detectCanvas.height);
+                    const detectSrc = cv.matFromImageData(detectImageData);
+                    
+                    const corners = detectDocumentCorners(detectSrc);
+                    detectSrc.delete();
+                    
+                    if (corners) {
+                        // Scale corners back to full resolution
+                        cornersToUse = corners.map(c => ({
+                            x: c.x / detectScale,
+                            y: c.y / detectScale
+                        }));
+                        detectedCorners = cornersToUse;
+                    }
+                }
+                
+                if (cornersToUse) {
+                    // Apply perspective transform for live preview (using full res corners)
+                    const transformed = applyPerspectiveTransform(src, cornersToUse);
                     
                     if (transformed) {
                         // Hide the video and show the transformed preview on overlay canvas
@@ -4277,10 +4309,17 @@ class DesktopOS {
                         // Draw scaled to fit
                         overlayCtx.drawImage(previewCanvas, offsetX, offsetY, displayWidth, displayHeight);
                         
-                        // Draw subtle border around the document
-                        overlayCtx.strokeStyle = '#10b981';
+                        // Draw border - different color if locked
+                        overlayCtx.strokeStyle = cornersLocked ? '#f59e0b' : '#10b981';
                         overlayCtx.lineWidth = 2;
                         overlayCtx.strokeRect(offsetX, offsetY, displayWidth, displayHeight);
+                        
+                        // Show lock indicator
+                        if (cornersLocked) {
+                            overlayCtx.fillStyle = 'rgba(245, 158, 11, 0.9)';
+                            overlayCtx.font = 'bold 14px system-ui';
+                            overlayCtx.fillText('🔒 LOCKED', offsetX + 10, offsetY + 24);
+                        }
                         
                         transformed.delete();
                     } else {
@@ -4345,6 +4384,13 @@ class DesktopOS {
             // Restore video visibility
             video.style.opacity = '1';
             
+            // Clear lock state
+            cornersLocked = false;
+            lockedCorners = null;
+            if (smartLockBtn) smartLockBtn.classList.remove('active');
+            if (smartLockDesc) smartLockDesc.classList.add('hidden');
+            if (smartModeDesc) smartModeDesc.classList.remove('hidden');
+            
             detectedCorners = null;
         };
         
@@ -4355,6 +4401,52 @@ class DesktopOS {
                     startSmartMode();
                 } else {
                     stopSmartMode();
+                }
+            });
+        }
+        
+        // Lock button handler
+        if (smartLockBtn) {
+            smartLockBtn.addEventListener('click', () => {
+                if (!smartModeEnabled) {
+                    // If Smart Mode is off, enable it first
+                    smartToggle.checked = true;
+                    startSmartMode();
+                    return;
+                }
+                
+                if (cornersLocked) {
+                    // Currently locked - unlock and re-detect once
+                    cornersLocked = false;
+                    lockedCorners = null;
+                    smartLockBtn.classList.remove('active');
+                    if (smartLockDesc) smartLockDesc.classList.add('hidden');
+                    if (smartModeDesc) smartModeDesc.classList.remove('hidden');
+                    
+                    // Briefly unlock to detect new corners, then lock again
+                    setTimeout(() => {
+                        if (detectedCorners && detectedCorners.length === 4) {
+                            lockedCorners = [...detectedCorners];
+                            cornersLocked = true;
+                            smartLockBtn.classList.add('active');
+                            if (smartLockDesc) smartLockDesc.classList.remove('hidden');
+                            if (smartModeDesc) smartModeDesc.classList.add('hidden');
+                        }
+                    }, 500); // Give time for one detection cycle
+                } else {
+                    // Not locked - lock current corners
+                    if (detectedCorners && detectedCorners.length === 4) {
+                        lockedCorners = [...detectedCorners];
+                        cornersLocked = true;
+                        smartLockBtn.classList.add('active');
+                        if (smartLockDesc) smartLockDesc.classList.remove('hidden');
+                        if (smartModeDesc) smartModeDesc.classList.add('hidden');
+                    } else {
+                        // No corners detected yet
+                        if (self && self.showNotification) {
+                            self.showNotification('Position document in view first', 'warning');
+                        }
+                    }
                 }
             });
         }
@@ -4797,12 +4889,19 @@ class DesktopOS {
                         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>' +
                         'Smart Mode (Document Scan)' +
                     '</label>' +
-                    '<div class="smart-mode-toggle">' +
-                        '<input type="checkbox" class="camera-smart-toggle" id="camera-smart-toggle">' +
-                        '<label for="camera-smart-toggle" class="toggle-switch"></label>' +
-                        '<span class="smart-mode-status">Off</span>' +
+                    '<div class="smart-mode-controls">' +
+                        '<div class="smart-mode-toggle">' +
+                            '<input type="checkbox" class="camera-smart-toggle" id="camera-smart-toggle">' +
+                            '<label for="camera-smart-toggle" class="toggle-switch"></label>' +
+                            '<span class="smart-mode-status">Off</span>' +
+                        '</div>' +
+                        '<button class="smart-lock-btn" title="Lock/Refresh corners - click to capture current document position">' +
+                            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>' +
+                            '<span>Lock</span>' +
+                        '</button>' +
                     '</div>' +
                     '<p class="smart-mode-desc">Auto-detect document edges, de-skew, and crop to 8.5×11</p>' +
+                    '<p class="smart-lock-desc hidden">🔒 Corners locked - click Lock again to refresh</p>' +
                 '</div>' +
                 '<div class="camera-option-divider"></div>' +
                 '<div class="camera-option-row">' +
