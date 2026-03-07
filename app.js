@@ -1343,12 +1343,10 @@ class DesktopOS {
                         body: JSON.stringify({ displayName, title })
                     });
                     
-                    // Update local user data
+                    // Update local user data (in-memory only, DB is source of truth)
                     if (this.currentUser) {
                         this.currentUser.displayName = displayName;
                         this.currentUser.title = title;
-                        // Persist to localStorage
-                        localStorage.setItem("hovercam_session", JSON.stringify(this.currentUser));
                     }
                     
                     // Update UI
