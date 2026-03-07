@@ -9,6 +9,7 @@ const { Pool } = require('pg');
 const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CopyObjectCommand } = require('@aws-sdk/client-s3');
 const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -55,6 +56,15 @@ const s3Client = new S3Client({
 // SES Client
 const sesClient = new SESClient({
     region: process.env.AWS_SES_REGION || process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
+});
+
+// Bedrock Client for AI Chat
+const bedrockClient = new BedrockRuntimeClient({
+    region: process.env.AWS_BEDROCK_REGION || 'us-west-2',
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
@@ -1492,6 +1502,284 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) =>
     } catch (error) {
         console.error('Admin stats error:', error);
         res.status(500).json({ error: 'Failed to get stats' });
+    }
+});
+
+// ============================================
+// TERMINAL CHAT API (ChaCha AI Assistant)
+// ============================================
+
+// Get AI settings (for admin)
+app.get('/api/admin/ai-settings', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT setting_key, setting_value FROM ai_settings');
+        const settings = {};
+        result.rows.forEach(row => {
+            settings[row.setting_key] = row.setting_value;
+        });
+        res.json(settings);
+    } catch (error) {
+        console.error('Get AI settings error:', error);
+        res.status(500).json({ error: 'Failed to get AI settings' });
+    }
+});
+
+// Update AI settings (admin only)
+app.put('/api/admin/ai-settings', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { system_prompt, model_id, max_tokens, temperature } = req.body;
+        
+        if (system_prompt !== undefined) {
+            await pool.query(
+                'UPDATE ai_settings SET setting_value = $1, updated_at = NOW(), updated_by = $2 WHERE setting_key = $3',
+                [system_prompt, req.user.id, 'system_prompt']
+            );
+        }
+        if (model_id !== undefined) {
+            await pool.query(
+                'UPDATE ai_settings SET setting_value = $1, updated_at = NOW(), updated_by = $2 WHERE setting_key = $3',
+                [model_id, req.user.id, 'model_id']
+            );
+        }
+        if (max_tokens !== undefined) {
+            await pool.query(
+                'UPDATE ai_settings SET setting_value = $1, updated_at = NOW(), updated_by = $2 WHERE setting_key = $3',
+                [String(max_tokens), req.user.id, 'max_tokens']
+            );
+        }
+        if (temperature !== undefined) {
+            await pool.query(
+                'UPDATE ai_settings SET setting_value = $1, updated_at = NOW(), updated_by = $2 WHERE setting_key = $3',
+                [String(temperature), req.user.id, 'temperature']
+            );
+        }
+        
+        res.json({ message: 'AI settings updated' });
+    } catch (error) {
+        console.error('Update AI settings error:', error);
+        res.status(500).json({ error: 'Failed to update AI settings' });
+    }
+});
+
+// Helper to get user context from S3
+async function getUserContext(userEmail) {
+    const contextKey = `${getUserPrefix(userEmail)}/chat-context.json`;
+    try {
+        const response = await s3Client.send(new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: contextKey
+        }));
+        const data = await response.Body.transformToString();
+        return JSON.parse(data);
+    } catch (error) {
+        if (error.name === 'NoSuchKey') {
+            return { 
+                memories: [],
+                conversationHistory: [],
+                lastChat: null
+            };
+        }
+        throw error;
+    }
+}
+
+// Helper to save user context to S3
+async function saveUserContext(userEmail, context) {
+    const contextKey = `${getUserPrefix(userEmail)}/chat-context.json`;
+    await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: contextKey,
+        Body: JSON.stringify(context),
+        ContentType: 'application/json'
+    }));
+}
+
+// Chat endpoint
+app.post('/api/chat', authenticateToken, async (req, res) => {
+    try {
+        const { message } = req.body;
+        if (!message || !message.trim()) {
+            return res.status(400).json({ error: 'Message is required' });
+        }
+
+        // Get AI settings
+        const settingsResult = await pool.query('SELECT setting_key, setting_value FROM ai_settings');
+        const settings = {};
+        settingsResult.rows.forEach(row => {
+            settings[row.setting_key] = row.setting_value;
+        });
+
+        // Get user context
+        const userContext = await getUserContext(req.user.email);
+        
+        // Get user info for personalization
+        const userResult = await pool.query(
+            'SELECT display_name, title FROM users WHERE email = $1',
+            [req.user.email]
+        );
+        const userInfo = userResult.rows[0] || {};
+
+        // Build context string from memories
+        let memoryContext = '';
+        if (userContext.memories && userContext.memories.length > 0) {
+            memoryContext = '\n\nWhat you know about this teacher:\n' + 
+                userContext.memories.slice(-20).map(m => `- ${m}`).join('\n');
+        }
+
+        // Build recent conversation history (last 10 exchanges)
+        let recentHistory = '';
+        if (userContext.conversationHistory && userContext.conversationHistory.length > 0) {
+            const recent = userContext.conversationHistory.slice(-10);
+            recentHistory = '\n\nRecent conversation:\n' + 
+                recent.map(h => `${h.role}: ${h.content}`).join('\n');
+        }
+
+        // Build the full prompt for Titan
+        const systemPrompt = settings.system_prompt || 'You are a helpful assistant.';
+        const userGreeting = userInfo.display_name ? `The teacher's name is ${userInfo.display_name}.` : '';
+        
+        const fullPrompt = `${systemPrompt}
+
+${userGreeting}
+${memoryContext}
+${recentHistory}
+
+User: ${message}
+Assistant:`;
+
+        // Call Bedrock Titan
+        const modelId = settings.model_id || 'amazon.titan-text-express-v1';
+        const maxTokens = parseInt(settings.max_tokens) || 500;
+        const temperature = parseFloat(settings.temperature) || 0.7;
+
+        const command = new InvokeModelCommand({
+            modelId: modelId,
+            contentType: 'application/json',
+            accept: 'application/json',
+            body: JSON.stringify({
+                inputText: fullPrompt,
+                textGenerationConfig: {
+                    maxTokenCount: maxTokens,
+                    temperature: temperature,
+                    topP: 0.9,
+                    stopSequences: ['User:', '\n\nUser:']
+                }
+            })
+        });
+
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        let assistantMessage = responseBody.results?.[0]?.outputText || 'I apologize, I had trouble responding. Could you try again?';
+        
+        // Clean up the response
+        assistantMessage = assistantMessage.trim();
+
+        // Extract any new memories from the conversation
+        const newMemories = extractMemories(message, assistantMessage);
+        if (newMemories.length > 0) {
+            userContext.memories = [...(userContext.memories || []), ...newMemories];
+            // Keep only last 50 memories
+            if (userContext.memories.length > 50) {
+                userContext.memories = userContext.memories.slice(-50);
+            }
+        }
+
+        // Update conversation history
+        userContext.conversationHistory = userContext.conversationHistory || [];
+        userContext.conversationHistory.push(
+            { role: 'User', content: message },
+            { role: 'Assistant', content: assistantMessage }
+        );
+        // Keep only last 20 exchanges (40 messages)
+        if (userContext.conversationHistory.length > 40) {
+            userContext.conversationHistory = userContext.conversationHistory.slice(-40);
+        }
+        
+        userContext.lastChat = new Date().toISOString();
+
+        // Save updated context
+        await saveUserContext(req.user.email, userContext);
+
+        res.json({ 
+            response: assistantMessage,
+            memories: userContext.memories?.length || 0
+        });
+
+    } catch (error) {
+        console.error('Chat error:', error);
+        res.status(500).json({ error: 'Failed to process chat: ' + error.message });
+    }
+});
+
+// Helper to extract memories from conversation
+function extractMemories(userMessage, assistantResponse) {
+    const memories = [];
+    const lowerMessage = userMessage.toLowerCase();
+    
+    // Extract name mentions
+    const namePatterns = [
+        /my name is (\w+)/i,
+        /i'm (\w+)/i,
+        /call me (\w+)/i,
+        /i am (\w+)/i
+    ];
+    for (const pattern of namePatterns) {
+        const match = userMessage.match(pattern);
+        if (match && match[1].length > 1 && !['a', 'the', 'an', 'not', 'very', 'just', 'so'].includes(match[1].toLowerCase())) {
+            memories.push(`Teacher's name is ${match[1]}`);
+        }
+    }
+    
+    // Extract teaching info
+    if (lowerMessage.includes('teach') && (lowerMessage.includes('grade') || lowerMessage.includes('subject') || lowerMessage.includes('class'))) {
+        memories.push(`Teaching info: ${userMessage.slice(0, 100)}`);
+    }
+    
+    // Extract school mentions
+    if (lowerMessage.includes('school') || lowerMessage.includes('district')) {
+        const schoolMatch = userMessage.match(/(?:at|in|from)\s+([A-Z][a-zA-Z\s]+(?:school|district|academy|elementary|middle|high))/i);
+        if (schoolMatch) {
+            memories.push(`Works at ${schoolMatch[1]}`);
+        }
+    }
+    
+    // Extract hobby/interest mentions
+    if (lowerMessage.includes('i love') || lowerMessage.includes('i enjoy') || lowerMessage.includes('my hobby') || lowerMessage.includes('i like')) {
+        memories.push(`Interest: ${userMessage.slice(0, 80)}`);
+    }
+    
+    // Extract years of experience
+    const yearsMatch = userMessage.match(/(\d+)\s*years?\s*(?:teaching|experience|in education)/i);
+    if (yearsMatch) {
+        memories.push(`Has ${yearsMatch[1]} years of teaching experience`);
+    }
+    
+    return memories;
+}
+
+// Get chat context (for debugging/admin)
+app.get('/api/chat/context', authenticateToken, async (req, res) => {
+    try {
+        const context = await getUserContext(req.user.email);
+        res.json(context);
+    } catch (error) {
+        console.error('Get context error:', error);
+        res.status(500).json({ error: 'Failed to get context' });
+    }
+});
+
+// Clear chat context
+app.delete('/api/chat/context', authenticateToken, async (req, res) => {
+    try {
+        await saveUserContext(req.user.email, {
+            memories: [],
+            conversationHistory: [],
+            lastChat: null
+        });
+        res.json({ message: 'Chat context cleared' });
+    } catch (error) {
+        console.error('Clear context error:', error);
+        res.status(500).json({ error: 'Failed to clear context' });
     }
 });
 

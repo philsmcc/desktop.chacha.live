@@ -1462,6 +1462,10 @@ class DesktopOS {
         if (appId === "usermanager") {
             setTimeout(() => this.initUserManager(windowEl), 50);
         }
+        
+        if (appId === "terminal") {
+            setTimeout(() => this.initTerminal(windowEl), 50);
+        }
     }
 
     bindSettingsEvents(windowEl) {
@@ -5424,19 +5428,161 @@ class DesktopOS {
     }
 
     renderTerminalApp() {
+        const username = this.currentUser?.displayName || this.currentUser?.username || 'teacher';
         return '<div class="terminal-app">' +
-            '<div class="terminal-line"><span class="term-user">hovercam@desktop</span>:<span class="term-path">~</span>$ <span class="term-cmd">welcome</span></div>' +
-            '<pre class="terminal-ascii">' +
-'██╗  ██╗ ██████╗ ██╗   ██╗███████╗██████╗  ██████╗ █████╗ ███╗   ███╗\n' +
-'██║  ██║██╔═══██╗██║   ██║██╔════╝██╔══██╗██╔════╝██╔══██╗████╗ ████║\n' +
-'███████║██║   ██║██║   ██║█████╗  ██████╔╝██║     ███████║██╔████╔██║\n' +
-'██╔══██║██║   ██║╚██╗ ██╔╝██╔══╝  ██╔══██╗██║     ██╔══██║██║╚██╔╝██║\n' +
-'██║  ██║╚██████╔╝ ╚████╔╝ ███████╗██║  ██║╚██████╗██║  ██║██║ ╚═╝ ██║\n' +
-'╚═╝  ╚═╝ ╚═════╝   ╚═══╝  ╚══════╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝</pre>' +
-            '<div class="terminal-info">Welcome to HoverCam Desktop Terminal v2.0</div>' +
-            '<div class="terminal-hint">Type "help" for available commands.</div>' +
-            '<div class="terminal-line"><span class="term-user">hovercam@desktop</span>:<span class="term-path">~</span>$ <span class="term-cursor">▋</span></div>' +
+            '<div class="terminal-output" id="terminal-output">' +
+                '<div class="terminal-welcome">' +
+                    '<pre class="terminal-ascii">' +
+' ██████╗██╗  ██╗ █████╗  ██████╗██╗  ██╗ █████╗ \n' +
+'██╔════╝██║  ██║██╔══██╗██╔════╝██║  ██║██╔══██╗\n' +
+'██║     ███████║███████║██║     ███████║███████║\n' +
+'██║     ██╔══██║██╔══██║██║     ██╔══██║██╔══██║\n' +
+'╚██████╗██║  ██║██║  ██║╚██████╗██║  ██║██║  ██║\n' +
+' ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝</pre>' +
+                    '<div class="terminal-info">ChaCha Terminal v1.0 - Your friendly AI assistant</div>' +
+                    '<div class="terminal-hint">Type a message and press Enter to chat. Type "clear" to clear, "help" for commands.</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="terminal-input-line">' +
+                '<span class="term-prompt">' + username + '@chacha:~$</span>' +
+                '<input type="text" id="terminal-input" class="terminal-input" placeholder="Say hello..." autocomplete="off" spellcheck="false">' +
+            '</div>' +
         '</div>';
+    }
+    
+    initTerminal(windowEl) {
+        const self = this;
+        const output = windowEl.querySelector('#terminal-output');
+        const input = windowEl.querySelector('#terminal-input');
+        let isProcessing = false;
+        
+        // Focus input when clicking anywhere in terminal
+        windowEl.querySelector('.terminal-app').addEventListener('click', () => {
+            input.focus();
+        });
+        
+        input.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter' && !isProcessing) {
+                const message = input.value.trim();
+                if (!message) return;
+                
+                // Handle special commands
+                if (message.toLowerCase() === 'clear') {
+                    output.innerHTML = '<div class="terminal-hint">Chat cleared. Say hi!</div>';
+                    input.value = '';
+                    return;
+                }
+                
+                if (message.toLowerCase() === 'help') {
+                    self.addTerminalLine(output, 'user', message);
+                    self.addTerminalLine(output, 'system', 
+                        'Commands:\n' +
+                        '  clear  - Clear the chat history\n' +
+                        '  help   - Show this help message\n' +
+                        '  forget - Clear ChaCha\'s memory of you\n' +
+                        '\nOr just type anything to chat with ChaCha!'
+                    );
+                    input.value = '';
+                    return;
+                }
+                
+                if (message.toLowerCase() === 'forget') {
+                    self.addTerminalLine(output, 'user', message);
+                    try {
+                        await self.api('/chat/context', { method: 'DELETE' });
+                        self.addTerminalLine(output, 'system', 'Memory cleared. It\'s like we just met! 👋');
+                    } catch (error) {
+                        self.addTerminalLine(output, 'error', 'Failed to clear memory: ' + error.message);
+                    }
+                    input.value = '';
+                    return;
+                }
+                
+                // Add user message to output
+                self.addTerminalLine(output, 'user', message);
+                input.value = '';
+                isProcessing = true;
+                
+                // Show typing indicator
+                const typingId = 'typing-' + Date.now();
+                self.addTerminalLine(output, 'typing', '...', typingId);
+                
+                try {
+                    const response = await self.api('/chat', {
+                        method: 'POST',
+                        body: JSON.stringify({ message })
+                    });
+                    
+                    // Remove typing indicator
+                    const typingEl = output.querySelector('#' + typingId);
+                    if (typingEl) typingEl.remove();
+                    
+                    // Add ChaCha's response
+                    self.addTerminalLine(output, 'chacha', response.response);
+                    
+                } catch (error) {
+                    // Remove typing indicator
+                    const typingEl = output.querySelector('#' + typingId);
+                    if (typingEl) typingEl.remove();
+                    
+                    self.addTerminalLine(output, 'error', 'Oops! ' + (error.message || 'Something went wrong. Try again?'));
+                }
+                
+                isProcessing = false;
+                input.focus();
+            }
+        });
+        
+        // Auto-greet on first open
+        setTimeout(async () => {
+            try {
+                const context = await self.api('/chat/context');
+                if (!context.lastChat) {
+                    // First time user - send initial greeting
+                    self.addTerminalLine(output, 'typing', '...', 'initial-typing');
+                    const response = await self.api('/chat', {
+                        method: 'POST',
+                        body: JSON.stringify({ message: 'Hello!' })
+                    });
+                    const typingEl = output.querySelector('#initial-typing');
+                    if (typingEl) typingEl.remove();
+                    self.addTerminalLine(output, 'chacha', response.response);
+                }
+            } catch (error) {
+                console.log('Initial greeting skipped:', error.message);
+            }
+        }, 500);
+        
+        input.focus();
+    }
+    
+    addTerminalLine(output, type, text, id = null) {
+        const line = document.createElement('div');
+        line.className = 'terminal-message terminal-' + type;
+        if (id) line.id = id;
+        
+        const username = this.currentUser?.displayName || this.currentUser?.username || 'you';
+        
+        if (type === 'user') {
+            line.innerHTML = '<span class="msg-prefix">' + username + ':</span> ' + this.escapeHtml(text);
+        } else if (type === 'chacha') {
+            line.innerHTML = '<span class="msg-prefix chacha">chacha:</span> ' + this.escapeHtml(text);
+        } else if (type === 'system') {
+            line.innerHTML = '<span class="msg-prefix system">[system]</span>\n' + this.escapeHtml(text);
+        } else if (type === 'typing') {
+            line.innerHTML = '<span class="msg-prefix chacha">chacha:</span> <span class="typing-dots">thinking</span>';
+        } else if (type === 'error') {
+            line.innerHTML = '<span class="msg-prefix error">[error]</span> ' + this.escapeHtml(text);
+        }
+        
+        output.appendChild(line);
+        output.scrollTop = output.scrollHeight;
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML.replace(/\n/g, '<br>');
     }
 
     renderSettingsApp() {
