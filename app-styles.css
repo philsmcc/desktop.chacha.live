@@ -4873,20 +4873,22 @@ body.dark-theme .wb-minimap {
 /* Export options updates */
 .export-buttons {
     display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-top: 15px;
+    flex-direction: row;
+    gap: 8px;
+    margin: 0;
+    margin-left: auto;
 }
 
 .export-buttons .download-btn {
-    width: 100%;
-    padding: 12px 20px;
-    border-radius: 8px;
-    font-size: 14px;
+    width: auto;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
     border: none;
     transition: all 0.2s ease;
+    white-space: nowrap;
 }
 
 .export-buttons .download-btn:not(.primary) {
