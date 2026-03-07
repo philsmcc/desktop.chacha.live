@@ -6500,7 +6500,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 if (response.images && response.images.length > 0) {
                     resultsEl.innerHTML = '<div class="image-grid">' + response.images.map((img, idx) => 
                         '<div class="image-result" data-idx="' + idx + '">' +
-                            '<img src="' + img.url + '" alt="' + (img.title || 'Image') + '" loading="lazy" onerror="this.parentElement.style.display='none'">' +
+                            '<img src="' + img.url + '" alt="' + (img.title || 'Image') + '" loading="lazy" onerror="this.parentElement.style.display=\'none\'">' +
                             '<div class="image-info"><p class="image-title">' + (img.title || 'Untitled').substring(0, 50) + '</p><span class="image-source">' + img.source + '</span></div>' +
                             '<button class="select-image-btn">+ Add</button>' +
                         '</div>'
