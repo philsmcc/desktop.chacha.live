@@ -1139,6 +1139,49 @@ class DesktopOS {
             updateZoom();
         });
     }
+    
+    openPDFViewer(name, url) {
+        const windowId = 'pdfviewer-' + Date.now();
+        const container = document.getElementById("windows-container");
+        
+        const offset = this.windows.size * 30;
+        const left = 100 + offset;
+        const top = 50 + offset;
+
+        const windowEl = document.createElement("div");
+        windowEl.className = "window";
+        windowEl.id = windowId;
+        windowEl.style.cssText = 
+            "left: " + left + "px; " +
+            "top: " + top + "px; " +
+            "width: 900px; " +
+            "height: 700px; " +
+            "z-index: " + (++this.windowZIndex) + ";";
+
+        windowEl.innerHTML = 
+            '<div class="window-header">' +
+                '<div class="window-title">📄<span>' + name + '</span></div>' +
+                '<div class="window-controls">' +
+                    '<button class="window-control minimize" title="Minimize">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
+                    '</button>' +
+                    '<button class="window-control maximize" title="Maximize">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>' +
+                    '</button>' +
+                    '<button class="window-control close" title="Close">' +
+                        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+                    '</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="window-content" style="padding: 0; overflow: hidden;">' +
+                '<iframe class="pdf-viewer-frame" src="' + url + '" style="width: 100%; height: 100%; border: none;"></iframe>' +
+            '</div>' +
+            '<div class="window-resize"></div>';
+
+        container.appendChild(windowEl);
+        this.windows.set(windowId, { element: windowEl, minimized: false });
+        this.bindWindowEvents(windowEl, windowId);
+    }
 
     makeIconDraggable(icon, customId = null) {
         let isDragging = false;
@@ -4675,12 +4718,20 @@ class DesktopOS {
                 // Render files
                 currentFiles.forEach((file, index) => {
                     const isImage = file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-                    html += '<div class="file-item" data-type="file" data-index="' + index + '" data-path="' + file.path + '" data-name="' + file.name + '" draggable="' + (isImage ? 'true' : 'false') + '">' +
+                    const isPDF = file.name.match(/\.pdf$/i);
+                    let fileIconHtml;
+                    
+                    if (isImage) {
+                        fileIconHtml = '<img src="" alt="' + file.name + '" data-path="' + file.path + '" class="file-thumbnail">';
+                    } else if (isPDF) {
+                        fileIconHtml = '<svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><text x="7" y="17" font-size="6" fill="#ef4444" stroke="none" font-weight="bold">PDF</text></svg>';
+                    } else {
+                        fileIconHtml = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+                    }
+                    
+                    html += '<div class="file-item' + (isPDF ? ' pdf-file' : '') + '" data-type="file" data-index="' + index + '" data-path="' + file.path + '" data-name="' + file.name + '" draggable="' + (isImage ? 'true' : 'false') + '">' +
                         '<div class="file-icon' + (isImage ? ' image-icon' : '') + '">' +
-                            (isImage ? 
-                                '<img src="" alt="' + file.name + '" data-path="' + file.path + '" class="file-thumbnail">' :
-                                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
-                            ) +
+                            fileIconHtml +
                         '</div>' +
                         '<span class="file-name">' + file.name + '</span>' +
                     '</div>';
@@ -4720,6 +4771,34 @@ class DesktopOS {
                             currentPath = currentPath ? currentPath + '/' + folderName : folderName;
                             updatePath();
                             loadFiles();
+                        }
+                    });
+                });
+                
+                // Add double-click handlers for files (images and PDFs)
+                filesGrid.querySelectorAll('.file-item[data-type="file"]').forEach(item => {
+                    item.addEventListener('dblclick', async () => {
+                        const fileName = item.dataset.name;
+                        const filePath = item.dataset.path;
+                        const isImage = fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+                        const isPDF = fileName.match(/\.pdf$/i);
+                        
+                        if (isImage || isPDF) {
+                            try {
+                                // Get signed URL for the file
+                                const endpoint = isInSharedFolder ? '/shared/url' : '/files/url';
+                                const response = await self.api(endpoint + '?path=' + encodeURIComponent(filePath));
+                                const url = response.url;
+                                
+                                if (isImage) {
+                                    self.openImageViewer(fileName, url);
+                                } else if (isPDF) {
+                                    self.openPDFViewer(fileName, url);
+                                }
+                            } catch (error) {
+                                console.error('Failed to open file:', error);
+                                self.showNotification('Failed to open file', 'error');
+                            }
                         }
                     });
                 });
