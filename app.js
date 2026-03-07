@@ -4878,23 +4878,24 @@ class DesktopOS {
         const createFolder = async () => {
             const name = prompt('Enter folder name:');
             if (name && name.trim()) {
-                const folderPath = currentPath ? currentPath + '/' + name.trim() : name.trim();
+                const folderName = name.trim();
                 statusText.textContent = 'Creating folder...';
                 try {
                     if (isInSharedFolder) {
-                        // Create in shared folder
+                        // Create in shared folder - API expects name and path separately
                         await self.api('/shared/folder', {
                             method: 'POST',
-                            body: JSON.stringify({ path: folderPath })
+                            body: JSON.stringify({ name: folderName, path: currentPath })
                         });
                     } else {
-                        // Create in user's folder
+                        // Create in user's folder - API expects full path
+                        const folderPath = currentPath ? currentPath + '/' + folderName : folderName;
                         await self.api('/files/folder', {
                             method: 'POST',
                             body: JSON.stringify({ path: folderPath })
                         });
                     }
-                    statusText.textContent = 'Folder created: ' + name.trim();
+                    statusText.textContent = 'Folder created: ' + folderName;
                     loadFiles();
                 } catch (error) {
                     console.error('Failed to create folder:', error);
