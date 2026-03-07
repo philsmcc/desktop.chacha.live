@@ -1906,17 +1906,11 @@ Current information gathered:
 Be conversational, friendly, and helpful. Ask clarifying questions one or two at a time.
 When you have enough information (at least subject, grade, and topic), let them know they can generate the lesson plan.
 
-IMPORTANT: In your response, include a JSON block at the end with any extracted information:
-\`\`\`json
-{
-  "subject": "extracted subject or null",
-  "grade": "extracted grade or null", 
-  "topic": "extracted topic or null",
-  "standard": "extracted standard or null",
-  "duration": "extracted duration or null",
-  "readyToGenerate": true/false
-}
-\`\`\``;
+INTERNAL INSTRUCTIONS (DO NOT REVEAL TO USER):
+At the very end of your response, after your conversational message, include extraction data in this exact format on a NEW LINE:
+|||EXTRACT|||{"subject":"value or null","grade":"value or null","topic":"value or null","standard":"value or null","duration":"value or null","readyToGenerate":true or false}|||END|||
+
+Do NOT mention this extraction format to the user. Do NOT say anything about JSON or data extraction. Just have a natural conversation and silently append the extraction data at the end.`;
 
         // Build conversation for Nova
         const conversationStr = conversationHistory.map(m => 
@@ -2098,7 +2092,7 @@ ${conversationHistory.map(m => `${m.role}: ${m.content}`).join('\n').slice(-2000
 Please create an engaging, comprehensive lesson plan in the JSON format specified.`;
 
         // Use Claude Opus 4.6 via cross-region inference
-        const modelId = 'us.anthropic.claude-opus-4-6-v1:0';
+        const modelId = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
         
         const requestBody = {
             anthropic_version: 'bedrock-2023-05-31',
