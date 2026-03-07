@@ -1356,10 +1356,16 @@ class DesktopOS {
                         userInfo.querySelector('.user-role').textContent = title || 'User';
                     }
                     
+                    // Update avatar initial
+                    const avatar = windowEl.querySelector('.user-avatar');
+                    if (avatar && displayName) {
+                        avatar.textContent = displayName.charAt(0).toUpperCase();
+                    }
+                    
                     // Update topbar
                     const currentUserEl = document.getElementById('current-user');
-                    if (currentUserEl && displayName) {
-                        currentUserEl.textContent = displayName;
+                    if (currentUserEl) {
+                        currentUserEl.textContent = displayName || this.currentUser?.username || 'User';
                     }
                     
                     this.showNotification('Profile saved successfully', 'success');

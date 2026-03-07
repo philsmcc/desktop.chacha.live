@@ -2896,3 +2896,27 @@ body.dark-theme .wb-minimap {
 .dark-mode .profile-field label {
     color: #9ca3af;
 }
+
+/* Profile form improvements */
+.profile-form {
+    border-top: 1px solid #e5e7eb;
+    margin-top: 16px;
+    padding-top: 16px;
+}
+
+.dark-mode .profile-form {
+    border-top-color: #374151;
+}
+
+.settings-card .user-profile {
+    padding-bottom: 0;
+}
+
+/* Placeholder styling */
+.profile-field input::placeholder {
+    color: #9ca3af;
+}
+
+.dark-mode .profile-field input::placeholder {
+    color: #6b7280;
+}
