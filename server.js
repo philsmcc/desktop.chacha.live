@@ -1569,24 +1569,42 @@ app.put('/api/admin/ai-settings', authenticateToken, requireAdmin, async (req, r
 
 // Helper to get user context from S3
 async function getUserContext(userEmail) {
-    const contextKey = `${getUserPrefix(userEmail)}/chat-context.json`;
+    const prefix = getUserPrefix(userEmail);
+    const chatContextKey = `${prefix}/chat-context.json`;
+    const chachaContextKey = `${prefix}/chacha-context.json`;
+    
+    let chatContext = { memories: [], conversationHistory: [], lastChat: null };
+    let chachaContext = { lessonHistory: [] };
+    
+    // Load chat context
     try {
         const response = await s3Client.send(new GetObjectCommand({
             Bucket: BUCKET,
-            Key: contextKey
+            Key: chatContextKey
         }));
         const data = await response.Body.transformToString();
-        return JSON.parse(data);
+        chatContext = JSON.parse(data);
     } catch (error) {
-        if (error.name === 'NoSuchKey') {
-            return { 
-                memories: [],
-                conversationHistory: [],
-                lastChat: null
-            };
-        }
-        throw error;
+        if (error.name !== 'NoSuchKey') throw error;
     }
+    
+    // Load chacha context (which has lessonHistory)
+    try {
+        const response = await s3Client.send(new GetObjectCommand({
+            Bucket: BUCKET,
+            Key: chachaContextKey
+        }));
+        const data = await response.Body.transformToString();
+        chachaContext = JSON.parse(data);
+    } catch (error) {
+        // Ignore if not found
+    }
+    
+    // Merge lessonHistory into the context
+    return {
+        ...chatContext,
+        lessonHistory: chachaContext.lessonHistory || []
+    };
 }
 
 // Helper to save user context to S3
