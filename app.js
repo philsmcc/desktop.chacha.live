@@ -2995,7 +2995,7 @@ class DesktopOS {
             // Check for files from computer
             if (e.dataTransfer.files.length > 0) {
                 const file = e.dataTransfer.files[0];
-                if (file.type.startsWith('image/')) {
+                const isImage = file.type.startsWith('image/'); const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'); if (isImage || isPDF) {
                     const reader = new FileReader();
                     reader.onload = (event) => {
                         addImageAsObject(event.target.result, e);
@@ -4986,7 +4986,7 @@ class DesktopOS {
         // Handle file upload
         const handleFileUpload = async (fileList) => {
             for (const file of fileList) {
-                if (file.type.startsWith('image/')) {
+                const isImage = file.type.startsWith('image/'); const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'); if (isImage || isPDF) {
                     statusText.textContent = 'Uploading: ' + file.name;
                     
                     const formData = new FormData();
@@ -5020,7 +5020,7 @@ class DesktopOS {
                         statusText.textContent = 'Failed to upload: ' + file.name;
                     }
                 } else {
-                    statusText.textContent = 'Only image files are supported';
+                    statusText.textContent = 'Only images and PDFs are supported';
                 }
             }
         };

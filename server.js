@@ -36,9 +36,9 @@ pool.query('SELECT NOW()')
 // Multer for file uploads
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 },
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB for PDFs
     fileFilter: (req, file, cb) => {
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
         cb(null, allowedTypes.includes(file.mimetype));
     }
 });
