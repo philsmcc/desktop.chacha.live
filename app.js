@@ -4841,7 +4841,8 @@ class DesktopOS {
                 // Load thumbnails for images and store signed URLs
                 filesGrid.querySelectorAll('.file-thumbnail').forEach(async img => {
                     try {
-                        const response = await self.api('/files/url?path=' + encodeURIComponent(img.dataset.path));
+                        const endpoint = isInSharedFolder ? '/shared/url' : '/files/url';
+                        const response = await self.api(endpoint + '?path=' + encodeURIComponent(img.dataset.path));
                         img.src = response.url;
                         // Store the signed URL on the parent file-item for drag operations
                         const fileItem = img.closest('.file-item');
