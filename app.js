@@ -4777,7 +4777,7 @@ class DesktopOS {
                         fileIconHtml = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
                     }
                     
-                    html += '<div class="file-item' + (isPDF ? ' pdf-file' : '') + '" data-type="file" data-index="' + index + '" data-path="' + file.path + '" data-name="' + file.name + '" draggable="' + (isImage ? 'true' : 'false') + '">' +
+                    html += '<div class="file-item' + (isPDF ? ' pdf-file' : '') + '" data-type="file" data-index="' + index + '" data-path="' + file.path + '" data-name="' + file.name + '" draggable="true">' +
                         '<div class="file-icon' + (isImage ? ' image-icon' : '') + '">' +
                             fileIconHtml +
                         '</div>' +
@@ -4912,34 +4912,32 @@ class DesktopOS {
                     });
                 });
                 
-                // Add drag handlers for image files
-                filesGrid.querySelectorAll('.file-item[draggable="true"]').forEach(item => {
+                // Add drag handlers for all files
+                filesGrid.querySelectorAll('.file-item[data-type="file"]').forEach(item => {
                     item.addEventListener('dragstart', (e) => {
-                        // Use pre-fetched signed URL (must be synchronous)
-                        const signedUrl = item.dataset.signedUrl;
                         const fileName = item.dataset.name;
                         const filePath = item.dataset.path;
+                        const isImage = fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i);
                         
+                        // Set file move data for all files
+                        e.dataTransfer.setData('application/hovercam-file', JSON.stringify({
+                            key: filePath,
+                            name: fileName,
+                            type: isImage ? 'image' : 'file',
+                            source: 'files',
+                            sourceFolder: currentPath
+                        }));
+                        e.dataTransfer.effectAllowed = 'move';
+                        item.classList.add('dragging');
+                        
+                        // For images, also set the signed URL if available
+                        const signedUrl = item.dataset.signedUrl;
                         if (signedUrl) {
                             e.dataTransfer.setData('text/plain', signedUrl);
                             e.dataTransfer.setData('application/hovercam-image', JSON.stringify({
                                 name: fileName,
                                 url: signedUrl
                             }));
-                            // Also set file move data
-                            e.dataTransfer.setData('application/hovercam-file', JSON.stringify({
-                                key: filePath,
-                                name: fileName,
-                                type: 'image',
-                                source: 'files',
-                                sourceFolder: currentPath
-                            }));
-                            e.dataTransfer.effectAllowed = 'copyMove';
-                            item.classList.add('dragging');
-                        } else {
-                            // URL not ready yet - show message
-                            console.warn('Signed URL not ready yet, please wait for thumbnail to load');
-                            e.preventDefault();
                         }
                     });
                     
