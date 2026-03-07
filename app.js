@@ -161,8 +161,29 @@ class DesktopOS {
             // Load wallpapers
             await this.loadSystemWallpapers();
             await this.loadUserWallpapers();
+            
+            // Load user profile from S3
+            await this.loadUserProfile();
         } catch (error) {
             console.log('Could not load preferences:', error.message);
+        }
+    }
+    
+    async loadUserProfile() {
+        try {
+            const profile = await this.api('/profile');
+            if (this.currentUser) {
+                this.currentUser.displayName = profile.displayName || '';
+                this.currentUser.title = profile.title || '';
+                this.currentUser.organization = profile.organization || null;
+            }
+            // Update topbar with display name
+            const currentUserEl = document.getElementById('current-user');
+            if (currentUserEl && profile.displayName) {
+                currentUserEl.textContent = profile.displayName;
+            }
+        } catch (error) {
+            console.log('Could not load profile:', error.message);
         }
     }
 

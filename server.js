@@ -342,14 +342,25 @@ app.post('/api/auth/login', async (req, res) => {
         
         await pool.query('UPDATE users SET updated_at = NOW() WHERE id = $1', [user.id]);
         
+        // Fetch profile from S3
         const orgDomain = getOrgDomain(user.email);
+        let profile = { displayName: '', title: '' };
+        try {
+            const profileKey = `${getUserPrefix(user.email)}/profile.json`;
+            const profileResponse = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: profileKey }));
+            const profileBody = await profileResponse.Body.transformToString();
+            profile = JSON.parse(profileBody);
+        } catch (e) {
+            // No profile yet, use defaults
+        }
+        
         res.json({ 
             message: 'Login successful', 
             token, 
             user: { 
                 email: user.email,
-                displayName: user.display_name || '',
-                title: user.title || '',
+                displayName: profile.displayName || '',
+                title: profile.title || '',
                 organization: orgDomain ? { domain: orgDomain, hasSharedFolder: true } : null
             } 
         });
@@ -504,61 +515,78 @@ const getOrgDomain = (email) => {
 // Helper to get shared folder prefix for an organization
 const getSharedPrefix = (domain) => `shared/${domain.replace(/\./g, '_')}/files/`;
 
-// Get user profile
+// Get user profile (stored in user's S3 folder as profile.json)
 app.get('/api/profile', authenticateToken, async (req, res) => {
     try {
-        const result = await pool.query(
-            'SELECT email, display_name, title, created_at FROM users WHERE email = $1',
-            [req.user.email]
-        );
+        const key = `${getUserPrefix(req.user.email)}/profile.json`;
+        const orgDomain = getOrgDomain(req.user.email);
         
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-        
-        const user = result.rows[0];
-        const orgDomain = getOrgDomain(user.email);
-        
-        res.json({
-            email: user.email,
-            displayName: user.display_name || '',
-            title: user.title || '',
-            createdAt: user.created_at,
+        let profile = {
+            email: req.user.email,
+            displayName: '',
+            title: '',
             organization: orgDomain ? {
                 domain: orgDomain,
                 hasSharedFolder: true
             } : null
-        });
+        };
+        
+        try {
+            const response = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+            const body = await response.Body.transformToString();
+            const savedProfile = JSON.parse(body);
+            profile = { ...profile, ...savedProfile, email: req.user.email };
+        } catch (error) {
+            if (error.name !== 'NoSuchKey') throw error;
+            // No profile yet, return default
+        }
+        
+        // Always include current organization info
+        profile.organization = orgDomain ? {
+            domain: orgDomain,
+            hasSharedFolder: true
+        } : null;
+        
+        res.json(profile);
     } catch (error) {
         console.error('Get profile error:', error);
         res.status(500).json({ error: 'Failed to get profile' });
     }
 });
 
-// Update user profile
+// Update user profile (stored in user's S3 folder as profile.json)
 app.put('/api/profile', authenticateToken, async (req, res) => {
     try {
         const { displayName, title } = req.body;
+        const key = `${getUserPrefix(req.user.email)}/profile.json`;
         
-        // Update user record - add columns if they don't exist
-        await pool.query(`
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='display_name') THEN
-                    ALTER TABLE users ADD COLUMN display_name VARCHAR(100);
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='title') THEN
-                    ALTER TABLE users ADD COLUMN title VARCHAR(100);
-                END IF;
-            END $$;
-        `);
+        // Get existing profile data
+        let existingProfile = {};
+        try {
+            const response = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+            const body = await response.Body.transformToString();
+            existingProfile = JSON.parse(body);
+        } catch (error) {
+            if (error.name !== 'NoSuchKey') throw error;
+        }
         
-        await pool.query(
-            'UPDATE users SET display_name = $1, title = $2, updated_at = NOW() WHERE email = $3',
-            [displayName || null, title || null, req.user.email]
-        );
+        // Merge with new data
+        const updatedProfile = {
+            ...existingProfile,
+            displayName: displayName || '',
+            title: title || '',
+            updatedAt: new Date().toISOString()
+        };
         
-        res.json({ message: 'Profile updated successfully' });
+        // Save to S3
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET, 
+            Key: key, 
+            Body: JSON.stringify(updatedProfile), 
+            ContentType: 'application/json'
+        }));
+        
+        res.json({ message: 'Profile updated successfully', profile: updatedProfile });
     } catch (error) {
         console.error('Update profile error:', error);
         res.status(500).json({ error: 'Failed to update profile' });
