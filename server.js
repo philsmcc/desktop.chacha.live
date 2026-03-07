@@ -2082,6 +2082,12 @@ Make the lesson:
 5. Provide clear, actionable instructions for each section
 6. Include differentiation strategies
 
+IMPORTANT FORMATTING RULES:
+- All sentences must start with a capital letter
+- All bold/emphasized words at the start of sentences must be capitalized
+- Use proper grammar and punctuation throughout
+- Keep content professional and polished for educators
+
 ${teacherInfo}
 `;
 
@@ -2307,6 +2313,7 @@ function generateLessonPDF(plan, includedSections, options) {
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>${plan.title || 'Lesson Plan'}</title>
     <style>
         * { box-sizing: border-box; font-family: 'Georgia', serif; }
