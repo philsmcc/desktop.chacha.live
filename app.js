@@ -85,6 +85,13 @@ class DesktopOS {
                 icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
                 defaultSize: { width: 650, height: 600 },
                 content: () => this.renderSettingsApp()
+            },
+            {
+                id: "lessonplanner",
+                name: "Lesson Planner",
+                icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>',
+                defaultSize: { width: 1100, height: 750 },
+                content: () => this.renderLessonPlannerApp()
             }
         ];
         
@@ -1477,6 +1484,10 @@ class DesktopOS {
         
         if (appId === "aisettings") {
             setTimeout(() => this.initAISettings(windowEl), 50);
+        }
+        
+        if (appId === "lessonplanner") {
+            setTimeout(() => this.initLessonPlanner(windowEl), 50);
         }
     }
 
@@ -6246,6 +6257,213 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 self.showNotification('Failed to update domain: ' + error.message, 'error');
             }
         });
+    }
+
+
+    // ===== LESSON PLANNER APP =====
+    
+    renderLessonPlannerApp() {
+        return '<div class="lesson-planner-app">' +
+            '<div class="lesson-header">' +
+                '<h2>📚 Lesson Plan Generator</h2>' +
+                '<p class="lesson-subtitle">AI-powered lesson planning with blended learning suggestions</p>' +
+            '</div>' +
+            '<div class="lesson-content">' +
+                '<div class="lesson-sidebar">' +
+                    '<div class="lesson-steps">' +
+                        '<div class="step active" data-step="1"><span class="step-num">1</span><span class="step-label">Gather Info</span></div>' +
+                        '<div class="step" data-step="2"><span class="step-num">2</span><span class="step-label">Generate Plan</span></div>' +
+                        '<div class="step" data-step="3"><span class="step-num">3</span><span class="step-label">Review & Edit</span></div>' +
+                        '<div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">Export PDF</span></div>' +
+                    '</div>' +
+                    '<div class="lesson-history"><h4>Recent Lessons</h4><div class="history-list"></div></div>' +
+                '</div>' +
+                '<div class="lesson-main">' +
+                    '<div class="lesson-panel active" id="lesson-step-1">' +
+                        '<div class="chat-container">' +
+                            '<div class="chat-messages" id="lesson-chat-messages">' +
+                                '<div class="chat-message assistant"><div class="message-content"><strong>📚 Lesson Planner</strong><br><br>Hi! I\'m here to help you create an engaging lesson plan.<br><br>What subject and topic would you like to teach today?</div></div>' +
+                            '</div>' +
+                            '<div class="chat-input-area"><textarea id="lesson-chat-input" placeholder="Type your response..." rows="2"></textarea><button id="lesson-chat-send" class="send-btn">Send</button></div>' +
+                        '</div>' +
+                        '<div class="lesson-quick-info">' +
+                            '<h4>Lesson Details</h4>' +
+                            '<div class="quick-info-grid">' +
+                                '<div class="info-item"><label>Subject:</label><span id="info-subject">-</span></div>' +
+                                '<div class="info-item"><label>Grade:</label><span id="info-grade">-</span></div>' +
+                                '<div class="info-item"><label>Topic:</label><span id="info-topic">-</span></div>' +
+                                '<div class="info-item"><label>Standard:</label><span id="info-standard">-</span></div>' +
+                                '<div class="info-item"><label>Duration:</label><span id="info-duration">-</span></div>' +
+                            '</div>' +
+                            '<button id="lesson-generate-btn" class="generate-btn" disabled>🚀 Generate Lesson Plan</button>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="lesson-panel" id="lesson-step-2">' +
+                        '<div class="generating-container"><div class="spinner"></div><h3>Generating Your Lesson Plan...</h3><p class="generating-status">Analyzing requirements...</p><div class="progress-bar"><div class="progress-fill"></div></div></div>' +
+                    '</div>' +
+                    '<div class="lesson-panel" id="lesson-step-3">' +
+                        '<div class="lesson-review"><div class="review-header"><h3 id="review-title">Lesson Plan Review</h3><div class="review-actions"><button id="lesson-regenerate" class="action-btn">🔄 Regenerate</button><button id="lesson-export-btn" class="action-btn primary">📄 Export PDF</button></div></div><div class="lesson-sections" id="lesson-sections"></div></div>' +
+                    '</div>' +
+                    '<div class="lesson-panel" id="lesson-step-4">' +
+                        '<div class="export-container"><div class="export-preview" id="pdf-preview"></div><div class="export-options"><h4>Export Options</h4><label class="checkbox-label"><input type="checkbox" id="include-images" checked> Include generated images</label><label class="checkbox-label"><input type="checkbox" id="include-standards" checked> Include standards alignment</label><label class="checkbox-label"><input type="checkbox" id="include-blended" checked> Include blended learning suggestions</label><button id="download-pdf-btn" class="download-btn">📥 Download PDF</button></div></div>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
+    }
+    
+    initLessonPlanner(windowEl) {
+        const self = this;
+        let conversationHistory = [];
+        let lessonData = { subject: '', grade: '', topic: '', standard: '', duration: '', objectives: [], requirements: '', teacherContext: null };
+        let generatedPlan = null;
+        
+        const chatMessages = windowEl.querySelector('#lesson-chat-messages');
+        const chatInput = windowEl.querySelector('#lesson-chat-input');
+        const sendBtn = windowEl.querySelector('#lesson-chat-send');
+        const generateBtn = windowEl.querySelector('#lesson-generate-btn');
+        const steps = windowEl.querySelectorAll('.step');
+        const panels = windowEl.querySelectorAll('.lesson-panel');
+        
+        async function loadTeacherContext() {
+            try {
+                const response = await self.api('/lesson/context');
+                lessonData.teacherContext = response;
+                if (response.recentTopics && response.recentTopics.length > 0) {
+                    addMessage('assistant', 'I see you\'ve been working on some great lessons! Recently you\'ve covered: ' + response.recentTopics.slice(0,3).join(', ') + '. Would you like to continue building on those themes, or explore something new?');
+                }
+            } catch (error) { console.log('No existing context found'); }
+        }
+        
+        function goToStep(stepNum) {
+            steps.forEach(s => s.classList.remove('active'));
+            panels.forEach(p => p.classList.remove('active'));
+            const targetStep = windowEl.querySelector('.step[data-step="' + stepNum + '"]');
+            const targetPanel = windowEl.querySelector('#lesson-step-' + stepNum);
+            if (targetStep) targetStep.classList.add('active');
+            if (targetPanel) targetPanel.classList.add('active');
+        }
+        
+        function addMessage(role, content) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'chat-message ' + role;
+            messageDiv.innerHTML = '<div class="message-content">' + content + '</div>';
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        function updateQuickInfo() {
+            windowEl.querySelector('#info-subject').textContent = lessonData.subject || '-';
+            windowEl.querySelector('#info-grade').textContent = lessonData.grade || '-';
+            windowEl.querySelector('#info-topic').textContent = lessonData.topic || '-';
+            windowEl.querySelector('#info-standard').textContent = lessonData.standard || '-';
+            windowEl.querySelector('#info-duration').textContent = lessonData.duration || '-';
+            generateBtn.disabled = !(lessonData.subject && lessonData.grade && lessonData.topic);
+        }
+        
+        async function sendMessage() {
+            const message = chatInput.value.trim();
+            if (!message) return;
+            addMessage('user', message);
+            chatInput.value = '';
+            sendBtn.disabled = true;
+            conversationHistory.push({ role: 'user', content: message });
+            try {
+                const response = await self.api('/lesson/chat', {
+                    method: 'POST',
+                    body: JSON.stringify({ message, conversationHistory, currentData: lessonData })
+                });
+                conversationHistory.push({ role: 'assistant', content: response.message });
+                addMessage('assistant', response.message);
+                if (response.extractedData) { Object.assign(lessonData, response.extractedData); updateQuickInfo(); }
+                if (response.readyToGenerate) { generateBtn.classList.add('pulse'); }
+            } catch (error) { addMessage('assistant', 'Sorry, I had trouble processing that. Could you try again?'); }
+            finally { sendBtn.disabled = false; }
+        }
+        
+        async function generateLessonPlan() {
+            goToStep(2);
+            const statusEl = windowEl.querySelector('.generating-status');
+            const progressFill = windowEl.querySelector('.progress-fill');
+            const stages = [{ text: 'Analyzing requirements...', progress: 10 }, { text: 'Researching standards alignment...', progress: 25 }, { text: 'Creating learning objectives...', progress: 40 }, { text: 'Developing lesson content...', progress: 55 }, { text: 'Adding discussion topics...', progress: 70 }, { text: 'Generating blended learning ideas...', progress: 85 }, { text: 'Finalizing lesson plan...', progress: 95 }];
+            let stageIndex = 0;
+            const stageInterval = setInterval(() => { if (stageIndex < stages.length) { statusEl.textContent = stages[stageIndex].text; progressFill.style.width = stages[stageIndex].progress + '%'; stageIndex++; } }, 2000);
+            try {
+                const response = await self.api('/lesson/generate', { method: 'POST', body: JSON.stringify({ lessonData, conversationHistory }) });
+                clearInterval(stageInterval);
+                progressFill.style.width = '100%';
+                statusEl.textContent = 'Complete!';
+                generatedPlan = response.lessonPlan;
+                setTimeout(() => { renderLessonPlan(generatedPlan); goToStep(3); }, 500);
+            } catch (error) { clearInterval(stageInterval); statusEl.textContent = 'Error: ' + error.message; progressFill.style.backgroundColor = '#e74c3c'; }
+        }
+        
+        function renderLessonPlan(plan) {
+            const sectionsContainer = windowEl.querySelector('#lesson-sections');
+            const reviewTitle = windowEl.querySelector('#review-title');
+            reviewTitle.textContent = plan.title || 'Lesson Plan';
+            sectionsContainer.innerHTML = '';
+            const sections = [{ key: 'overview', title: '📋 Overview' }, { key: 'objectives', title: '🎯 Learning Objectives' }, { key: 'materials', title: '📦 Materials Needed' }, { key: 'introduction', title: '👋 Introduction/Hook' }, { key: 'directInstruction', title: '📖 Direct Instruction' }, { key: 'guidedPractice', title: '🤝 Guided Practice' }, { key: 'independentPractice', title: '✍️ Independent Practice' }, { key: 'discussion', title: '💬 Discussion Topics' }, { key: 'funFacts', title: '🌟 Fun Facts' }, { key: 'assessment', title: '📊 Assessment' }, { key: 'closure', title: '🏁 Closure' }, { key: 'blendedLearning', title: '🔀 Blended Learning' }, { key: 'differentiation', title: '🎭 Differentiation' }, { key: 'standards', title: '📜 Standards Alignment' }];
+            sections.forEach(section => {
+                if (plan[section.key]) {
+                    const sectionEl = document.createElement('div');
+                    sectionEl.className = 'lesson-section';
+                    sectionEl.innerHTML = '<div class="section-header"><label class="section-toggle"><input type="checkbox" checked data-section="' + section.key + '"><span class="toggle-slider"></span></label><h4>' + section.title + '</h4><button class="section-collapse">▼</button></div><div class="section-content">' + formatSectionContent(section.key, plan[section.key]) + '</div>';
+                    sectionsContainer.appendChild(sectionEl);
+                    const collapseBtn = sectionEl.querySelector('.section-collapse');
+                    const content = sectionEl.querySelector('.section-content');
+                    collapseBtn.addEventListener('click', () => { content.classList.toggle('collapsed'); collapseBtn.textContent = content.classList.contains('collapsed') ? '▶' : '▼'; });
+                }
+            });
+        }
+        
+        function formatSectionContent(key, content) {
+            if (Array.isArray(content)) return '<ul>' + content.map(item => '<li>' + item + '</li>').join('') + '</ul>';
+            if (typeof content === 'object') return '<div class="content-block">' + Object.entries(content).map(([k, v]) => '<div class="content-item"><strong>' + k + ':</strong> ' + (Array.isArray(v) ? v.join(', ') : v) + '</div>').join('') + '</div>';
+            return '<div class="content-text">' + content + '</div>';
+        }
+        
+        async function exportToPDF() {
+            goToStep(4);
+            const includedSections = {};
+            windowEl.querySelectorAll('.section-toggle input:checked').forEach(input => { includedSections[input.dataset.section] = true; });
+            const includeImages = windowEl.querySelector('#include-images').checked;
+            const includeStandards = windowEl.querySelector('#include-standards').checked;
+            const includeBlended = windowEl.querySelector('#include-blended').checked;
+            try {
+                const response = await self.api('/lesson/export-pdf', { method: 'POST', body: JSON.stringify({ lessonPlan: generatedPlan, includedSections, options: { includeImages, includeStandards, includeBlended } }) });
+                const previewEl = windowEl.querySelector('#pdf-preview');
+                previewEl.innerHTML = '<iframe src="' + response.previewUrl + '" frameborder="0"></iframe>';
+                windowEl.querySelector('#download-pdf-btn').onclick = () => { window.open(response.downloadUrl, '_blank'); };
+            } catch (error) { self.showNotification('Failed to generate PDF: ' + error.message, 'error'); }
+        }
+        
+        async function loadHistory() {
+            try {
+                const history = await self.api('/lesson/history');
+                const historyList = windowEl.querySelector('.history-list');
+                historyList.innerHTML = history.map(lesson => '<div class="history-item" data-id="' + lesson.id + '"><span class="history-subject">' + lesson.subject + '</span><span class="history-topic">' + lesson.topic + '</span><span class="history-date">' + new Date(lesson.created_at).toLocaleDateString() + '</span></div>').join('');
+                historyList.querySelectorAll('.history-item').forEach(item => { item.addEventListener('click', () => loadLesson(item.dataset.id)); });
+            } catch (error) { console.log('No history available'); }
+        }
+        
+        async function loadLesson(id) {
+            try {
+                const lesson = await self.api('/lesson/' + id);
+                generatedPlan = lesson.plan;
+                lessonData = lesson.data;
+                renderLessonPlan(generatedPlan);
+                goToStep(3);
+            } catch (error) { self.showNotification('Failed to load lesson', 'error'); }
+        }
+        
+        sendBtn.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+        generateBtn.addEventListener('click', generateLessonPlan);
+        windowEl.querySelector('#lesson-export-btn').addEventListener('click', exportToPDF);
+        windowEl.querySelector('#lesson-regenerate').addEventListener('click', () => { goToStep(1); generateBtn.disabled = false; });
+        loadTeacherContext();
+        loadHistory();
     }
 
 }

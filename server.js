@@ -1821,6 +1821,525 @@ app.delete('/api/chat/context', authenticateToken, async (req, res) => {
     }
 });
 
+// ===== LESSON PLANNER API =====
+
+// Create lessons table if not exists
+pool.query(`
+    CREATE TABLE IF NOT EXISTS lesson_plans (
+        id SERIAL PRIMARY KEY,
+        user_email VARCHAR(255) NOT NULL,
+        subject VARCHAR(100),
+        grade VARCHAR(50),
+        topic VARCHAR(255),
+        standard VARCHAR(255),
+        duration VARCHAR(50),
+        plan_data JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+`).catch(err => console.error('Lesson plans table creation error:', err));
+
+// Get lesson context from S3 + terminal context
+app.get('/api/lesson/context', authenticateToken, async (req, res) => {
+    try {
+        const prefix = getUserPrefix(req.user.email);
+        
+        // Get ChaCha terminal context
+        let terminalContext = null;
+        try {
+            const contextKey = `${prefix}/chacha-context.json`;
+            const getCmd = new GetObjectCommand({ Bucket: BUCKET, Key: contextKey });
+            const response = await s3Client.send(getCmd);
+            const contextStr = await response.Body.transformToString();
+            terminalContext = JSON.parse(contextStr);
+        } catch (e) {
+            // No terminal context yet
+        }
+        
+        // Get recent lessons from database
+        const lessonsResult = await pool.query(
+            'SELECT subject, topic, grade, created_at FROM lesson_plans WHERE user_email = $1 ORDER BY created_at DESC LIMIT 10',
+            [req.user.email]
+        );
+        
+        const recentTopics = lessonsResult.rows.map(r => r.topic);
+        const recentSubjects = [...new Set(lessonsResult.rows.map(r => r.subject))];
+        
+        res.json({
+            terminalContext: terminalContext ? {
+                memories: terminalContext.memories || [],
+                recentChats: terminalContext.conversationHistory?.slice(-6) || []
+            } : null,
+            recentTopics,
+            recentSubjects,
+            lessonsCount: lessonsResult.rows.length
+        });
+    } catch (error) {
+        console.error('Get lesson context error:', error);
+        res.status(500).json({ error: 'Failed to get context' });
+    }
+});
+
+// Chat with Nova Pro to gather lesson requirements
+app.post('/api/lesson/chat', authenticateToken, async (req, res) => {
+    try {
+        const { message, conversationHistory, currentData } = req.body;
+        
+        const systemPrompt = `You are an expert educational curriculum designer helping a teacher create a lesson plan.
+Your goal is to gather the necessary information to create a comprehensive lesson plan.
+
+You need to collect:
+1. Subject (e.g., Math, Science, English, History, Art)
+2. Grade level (e.g., K, 1st-12th, or age range)
+3. Topic/Concept to teach
+4. Learning standard (suggest Common Core or state standards if they don't specify)
+5. Duration (class period length)
+6. Any special requirements or accommodations
+
+Current information gathered:
+- Subject: ${currentData.subject || 'Not specified'}
+- Grade: ${currentData.grade || 'Not specified'}
+- Topic: ${currentData.topic || 'Not specified'}
+- Standard: ${currentData.standard || 'Not specified'}
+- Duration: ${currentData.duration || 'Not specified'}
+
+Be conversational, friendly, and helpful. Ask clarifying questions one or two at a time.
+When you have enough information (at least subject, grade, and topic), let them know they can generate the lesson plan.
+
+IMPORTANT: In your response, include a JSON block at the end with any extracted information:
+\`\`\`json
+{
+  "subject": "extracted subject or null",
+  "grade": "extracted grade or null", 
+  "topic": "extracted topic or null",
+  "standard": "extracted standard or null",
+  "duration": "extracted duration or null",
+  "readyToGenerate": true/false
+}
+\`\`\``;
+
+        // Build conversation for Nova
+        const conversationStr = conversationHistory.map(m => 
+            `${m.role === 'user' ? 'Teacher' : 'Assistant'}: ${m.content}`
+        ).join('\n');
+        
+        const fullPrompt = `${systemPrompt}\n\nConversation so far:\n${conversationStr}\n\nTeacher: ${message}\n\nAssistant:`;
+
+        // Call Nova Pro
+        const modelId = 'us.amazon.nova-pro-v1:0';
+        const requestBody = {
+            messages: [{ role: 'user', content: [{ text: fullPrompt }] }],
+            inferenceConfig: {
+                maxTokens: 1000,
+                temperature: 0.7
+            }
+        };
+
+        const command = new InvokeModelCommand({
+            modelId,
+            body: JSON.stringify(requestBody),
+            contentType: 'application/json',
+            accept: 'application/json'
+        });
+
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        let assistantMessage = responseBody.output?.message?.content?.[0]?.text || 'I apologize, I had trouble processing that.';
+        
+        // Extract JSON from response
+        let extractedData = {};
+        let readyToGenerate = false;
+        const jsonMatch = assistantMessage.match(/\`\`\`json\n?([\s\S]*?)\`\`\`/);
+        if (jsonMatch) {
+            try {
+                const parsed = JSON.parse(jsonMatch[1]);
+                extractedData = {
+                    subject: parsed.subject || currentData.subject,
+                    grade: parsed.grade || currentData.grade,
+                    topic: parsed.topic || currentData.topic,
+                    standard: parsed.standard || currentData.standard,
+                    duration: parsed.duration || currentData.duration
+                };
+                readyToGenerate = parsed.readyToGenerate || false;
+                // Remove JSON from displayed message
+                assistantMessage = assistantMessage.replace(/\`\`\`json[\s\S]*?\`\`\`/, '').trim();
+            } catch (e) {
+                console.log('JSON parse error:', e);
+            }
+        }
+        
+        res.json({
+            message: assistantMessage,
+            extractedData,
+            readyToGenerate
+        });
+        
+    } catch (error) {
+        console.error('Lesson chat error:', error);
+        res.status(500).json({ error: 'Failed to process chat: ' + error.message });
+    }
+});
+
+// Generate full lesson plan with Claude Opus
+app.post('/api/lesson/generate', authenticateToken, async (req, res) => {
+    try {
+        const { lessonData, conversationHistory } = req.body;
+        
+        // Get terminal context for teacher info
+        let teacherInfo = '';
+        try {
+            const prefix = getUserPrefix(req.user.email);
+            const contextKey = `${prefix}/chacha-context.json`;
+            const getCmd = new GetObjectCommand({ Bucket: BUCKET, Key: contextKey });
+            const response = await s3Client.send(getCmd);
+            const contextStr = await response.Body.transformToString();
+            const ctx = JSON.parse(contextStr);
+            if (ctx.memories && ctx.memories.length > 0) {
+                teacherInfo = 'Known information about this teacher: ' + ctx.memories.join('; ');
+            }
+        } catch (e) {
+            // No context
+        }
+
+        const systemPrompt = `You are an expert educational curriculum designer creating a comprehensive, engaging lesson plan.
+
+Create a detailed lesson plan with the following structure (respond in valid JSON format):
+
+{
+  "title": "Engaging lesson title",
+  "overview": "Brief 2-3 sentence overview of what students will learn",
+  "objectives": [
+    "Students will be able to...",
+    "Students will understand...",
+    "Students will demonstrate..."
+  ],
+  "materials": [
+    "List of materials needed"
+  ],
+  "introduction": "5-10 minute hook/attention grabber - make it engaging and relevant to students' lives",
+  "directInstruction": {
+    "duration": "15-20 minutes",
+    "content": "Main teaching content with clear explanations",
+    "keyPoints": ["Point 1", "Point 2"],
+    "examples": ["Real-world example 1", "Example 2"]
+  },
+  "guidedPractice": {
+    "duration": "10-15 minutes",
+    "activities": ["Activity description with step-by-step instructions"],
+    "checkpoints": ["How to check for understanding"]
+  },
+  "independentPractice": {
+    "duration": "10-15 minutes",
+    "activities": ["Independent work activity"],
+    "extensions": ["For students who finish early"]
+  },
+  "discussion": [
+    "Thought-provoking discussion question 1",
+    "Discussion question 2",
+    "Discussion question 3"
+  ],
+  "funFacts": [
+    "Interesting fact related to the topic",
+    "Another engaging fact",
+    "Mind-blowing fact students will love"
+  ],
+  "assessment": {
+    "formative": ["How to assess during the lesson"],
+    "summative": ["End of lesson assessment ideas"],
+    "exitTicket": "Quick question to check understanding"
+  },
+  "closure": "How to wrap up the lesson effectively",
+  "blendedLearning": {
+    "mathConnections": "How to incorporate math if applicable",
+    "scienceConnections": "How to incorporate science if applicable",
+    "historyConnections": "How to incorporate history if applicable",
+    "technologyIntegration": "Digital tools or resources to enhance learning",
+    "artConnections": "Creative expression opportunities"
+  },
+  "differentiation": {
+    "struggling": ["Supports for struggling learners"],
+    "advanced": ["Extensions for advanced learners"],
+    "ell": ["Support for English Language Learners"],
+    "accommodations": ["General accommodations"]
+  },
+  "standards": {
+    "primaryStandard": "The main standard addressed",
+    "relatedStandards": ["Other standards touched on"]
+  },
+  "imagePrompts": [
+    "Description of a helpful diagram to generate",
+    "Description of an illustration that would help",
+    "Description of a visual aid"
+  ]
+}
+
+Make the lesson:
+1. Age-appropriate and engaging for the grade level
+2. Include real-world connections
+3. Incorporate opportunities for blended learning (connecting subjects)
+4. Include fun facts that will capture student interest
+5. Provide clear, actionable instructions for each section
+6. Include differentiation strategies
+
+${teacherInfo}
+`;
+
+        const userPrompt = `Create a comprehensive lesson plan with these requirements:
+
+Subject: ${lessonData.subject}
+Grade Level: ${lessonData.grade}
+Topic: ${lessonData.topic}
+Standard: ${lessonData.standard || 'Please suggest an appropriate standard'}
+Duration: ${lessonData.duration || '45-50 minutes'}
+
+Additional context from our conversation:
+${conversationHistory.map(m => `${m.role}: ${m.content}`).join('\n').slice(-2000)}
+
+Please create an engaging, comprehensive lesson plan in the JSON format specified.`;
+
+        // Use Claude Opus 4.6 via cross-region inference
+        const modelId = 'us.anthropic.claude-opus-4-6-v1:0';
+        
+        const requestBody = {
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 8000,
+            temperature: 0.7,
+            messages: [
+                { role: 'user', content: systemPrompt + '\n\n' + userPrompt }
+            ]
+        };
+
+        const command = new InvokeModelCommand({
+            modelId,
+            body: JSON.stringify(requestBody),
+            contentType: 'application/json',
+            accept: 'application/json'
+        });
+
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        const assistantMessage = responseBody.content?.[0]?.text || '';
+        
+        // Parse JSON from response
+        let lessonPlan = {};
+        try {
+            // Try to find JSON in the response
+            const jsonMatch = assistantMessage.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                lessonPlan = JSON.parse(jsonMatch[0]);
+            }
+        } catch (e) {
+            console.error('Failed to parse lesson plan JSON:', e);
+            // Create a basic structure from text
+            lessonPlan = {
+                title: lessonData.topic,
+                overview: assistantMessage.slice(0, 500),
+                error: 'Could not parse structured response'
+            };
+        }
+        
+        // Save to database
+        await pool.query(
+            `INSERT INTO lesson_plans (user_email, subject, grade, topic, standard, duration, plan_data) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [req.user.email, lessonData.subject, lessonData.grade, lessonData.topic, 
+             lessonData.standard, lessonData.duration, JSON.stringify(lessonPlan)]
+        );
+        
+        // Update teacher context with recent topic
+        try {
+            const prefix = getUserPrefix(req.user.email);
+            const lessonContextKey = `${prefix}/lesson-context.json`;
+            
+            let lessonContext = { recentTopics: [], lastGenerated: null };
+            try {
+                const getCmd = new GetObjectCommand({ Bucket: BUCKET, Key: lessonContextKey });
+                const response = await s3Client.send(getCmd);
+                const contextStr = await response.Body.transformToString();
+                lessonContext = JSON.parse(contextStr);
+            } catch (e) {}
+            
+            lessonContext.recentTopics = [lessonData.topic, ...(lessonContext.recentTopics || [])].slice(0, 20);
+            lessonContext.lastGenerated = new Date().toISOString();
+            
+            await s3Client.send(new PutObjectCommand({
+                Bucket: BUCKET,
+                Key: lessonContextKey,
+                Body: JSON.stringify(lessonContext),
+                ContentType: 'application/json'
+            }));
+        } catch (e) {
+            console.log('Failed to update lesson context:', e);
+        }
+        
+        res.json({ lessonPlan });
+        
+    } catch (error) {
+        console.error('Lesson generate error:', error);
+        res.status(500).json({ error: 'Failed to generate lesson plan: ' + error.message });
+    }
+});
+
+// Get lesson history
+app.get('/api/lesson/history', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT id, subject, grade, topic, created_at FROM lesson_plans WHERE user_email = $1 ORDER BY created_at DESC LIMIT 20',
+            [req.user.email]
+        );
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Lesson history error:', error);
+        res.status(500).json({ error: 'Failed to get history' });
+    }
+});
+
+// Get specific lesson
+app.get('/api/lesson/:id', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT * FROM lesson_plans WHERE id = $1 AND user_email = $2',
+            [req.params.id, req.user.email]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Lesson not found' });
+        }
+        const lesson = result.rows[0];
+        res.json({
+            plan: lesson.plan_data,
+            data: {
+                subject: lesson.subject,
+                grade: lesson.grade,
+                topic: lesson.topic,
+                standard: lesson.standard,
+                duration: lesson.duration
+            }
+        });
+    } catch (error) {
+        console.error('Get lesson error:', error);
+        res.status(500).json({ error: 'Failed to get lesson' });
+    }
+});
+
+// Export lesson to PDF
+app.post('/api/lesson/export-pdf', authenticateToken, async (req, res) => {
+    try {
+        const { lessonPlan, includedSections, options } = req.body;
+        
+        // Generate HTML for PDF
+        const html = generateLessonPDF(lessonPlan, includedSections, options);
+        
+        // For now, return HTML - can use puppeteer or similar for actual PDF
+        const prefix = getUserPrefix(req.user.email);
+        const pdfKey = `${prefix}/lessons/${lessonPlan.title?.replace(/[^a-z0-9]/gi, '_') || 'lesson'}_${Date.now()}.html`;
+        
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: pdfKey,
+            Body: html,
+            ContentType: 'text/html'
+        }));
+        
+        const getCmd = new GetObjectCommand({ Bucket: BUCKET, Key: pdfKey });
+        const previewUrl = await getSignedUrl(s3Client, getCmd, { expiresIn: 3600 });
+        
+        res.json({
+            previewUrl,
+            downloadUrl: previewUrl
+        });
+    } catch (error) {
+        console.error('PDF export error:', error);
+        res.status(500).json({ error: 'Failed to export PDF' });
+    }
+});
+
+// Helper function to generate PDF HTML
+function generateLessonPDF(plan, includedSections, options) {
+    const sections = [];
+    
+    // Helper to add section if included
+    const addSection = (key, title, content) => {
+        if (!includedSections || includedSections[key]) {
+            sections.push(`
+                <div class="section">
+                    <h2>${title}</h2>
+                    <div class="section-content">${formatContent(content)}</div>
+                </div>
+            `);
+        }
+    };
+    
+    const formatContent = (content) => {
+        if (Array.isArray(content)) {
+            return '<ul>' + content.map(item => `<li>${item}</li>`).join('') + '</ul>';
+        }
+        if (typeof content === 'object' && content !== null) {
+            return Object.entries(content).map(([key, value]) => 
+                `<p><strong>${key}:</strong> ${Array.isArray(value) ? value.join(', ') : value}</p>`
+            ).join('');
+        }
+        return `<p>${content}</p>`;
+    };
+    
+    addSection('overview', '📋 Overview', plan.overview);
+    addSection('objectives', '🎯 Learning Objectives', plan.objectives);
+    addSection('materials', '📦 Materials Needed', plan.materials);
+    addSection('introduction', '👋 Introduction/Hook', plan.introduction);
+    addSection('directInstruction', '📖 Direct Instruction', plan.directInstruction);
+    addSection('guidedPractice', '🤝 Guided Practice', plan.guidedPractice);
+    addSection('independentPractice', '✍️ Independent Practice', plan.independentPractice);
+    addSection('discussion', '💬 Discussion Topics', plan.discussion);
+    addSection('funFacts', '🌟 Fun Facts', plan.funFacts);
+    addSection('assessment', '📊 Assessment', plan.assessment);
+    addSection('closure', '🏁 Closure', plan.closure);
+    
+    if (options?.includeBlended) {
+        addSection('blendedLearning', '🔀 Blended Learning Opportunities', plan.blendedLearning);
+    }
+    addSection('differentiation', '🎭 Differentiation Strategies', plan.differentiation);
+    
+    if (options?.includeStandards) {
+        addSection('standards', '📜 Standards Alignment', plan.standards);
+    }
+    
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>${plan.title || 'Lesson Plan'}</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Georgia', serif; }
+        body { max-width: 800px; margin: 0 auto; padding: 40px 20px; line-height: 1.6; }
+        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+        h2 { color: #2980b9; margin-top: 30px; border-left: 4px solid #3498db; padding-left: 15px; }
+        .section { margin-bottom: 25px; page-break-inside: avoid; }
+        .section-content { background: #f8f9fa; padding: 15px; border-radius: 8px; }
+        ul { margin: 10px 0; padding-left: 25px; }
+        li { margin-bottom: 8px; }
+        strong { color: #34495e; }
+        .header-info { background: #ecf0f1; padding: 15px; border-radius: 8px; margin-bottom: 30px; }
+        .header-info p { margin: 5px 0; }
+        @media print {
+            body { padding: 20px; }
+            .section { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <h1>${plan.title || 'Lesson Plan'}</h1>
+    <div class="header-info">
+        <p><strong>Generated by:</strong> HoverCam Lesson Planner</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+    </div>
+    ${sections.join('')}
+    <footer style="margin-top: 40px; text-align: center; color: #7f8c8d; font-size: 12px;">
+        <p>Generated with HoverCam Desktop - AI-Powered Lesson Planning</p>
+    </footer>
+</body>
+</html>
+    `;
+}
+
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
