@@ -719,7 +719,7 @@ class DesktopOS {
     showDesktop() {
         document.getElementById("login-screen").classList.add("hidden");
         document.getElementById("desktop").classList.remove("hidden");
-        document.getElementById("current-user").textContent = this.currentUser.username;
+        document.getElementById("current-user").textContent = this.currentUser.displayName || this.currentUser.username;
         
         this.renderTaskbar();
         this.renderDesktopIcons();
