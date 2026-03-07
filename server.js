@@ -495,11 +495,11 @@ app.put('/api/preferences', authenticateToken, async (req, res) => {
 // Helper to get organization domain from email
 const getOrgDomain = (email) => {
     const domain = email.split('@')[1];
-    // Exclude common public email providers from shared folders
-    const publicDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com', 'mail.com', 'protonmail.com'];
-    if (publicDomains.includes(domain.toLowerCase())) {
-        return null;
-    }
+    // TODO: Later, exclude common public email providers from shared folders
+    // const publicDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com', 'mail.com', 'protonmail.com'];
+    // if (publicDomains.includes(domain.toLowerCase())) {
+    //     return null;
+    // }
     return domain.toLowerCase();
 };
 
