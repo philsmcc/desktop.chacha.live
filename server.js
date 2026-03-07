@@ -342,7 +342,17 @@ app.post('/api/auth/login', async (req, res) => {
         
         await pool.query('UPDATE users SET updated_at = NOW() WHERE id = $1', [user.id]);
         
-        res.json({ message: 'Login successful', token, user: { email: user.email } });
+        const orgDomain = getOrgDomain(user.email);
+        res.json({ 
+            message: 'Login successful', 
+            token, 
+            user: { 
+                email: user.email,
+                displayName: user.display_name || '',
+                title: user.title || '',
+                organization: orgDomain ? { domain: orgDomain, hasSharedFolder: true } : null
+            } 
+        });
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Login failed' });
@@ -475,6 +485,290 @@ app.put('/api/preferences', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Save preferences error:', error);
         res.status(500).json({ error: 'Failed to save preferences' });
+    }
+});
+
+// ==================== PROFILE ROUTES ====================
+
+// Helper to get organization domain from email
+const getOrgDomain = (email) => {
+    const domain = email.split('@')[1];
+    // Exclude common public email providers from shared folders
+    const publicDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com', 'mail.com', 'protonmail.com'];
+    if (publicDomains.includes(domain.toLowerCase())) {
+        return null;
+    }
+    return domain.toLowerCase();
+};
+
+// Helper to get shared folder prefix for an organization
+const getSharedPrefix = (domain) => `shared/${domain.replace(/\./g, '_')}/files/`;
+
+// Get user profile
+app.get('/api/profile', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT email, display_name, title, created_at FROM users WHERE email = $1',
+            [req.user.email]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        const user = result.rows[0];
+        const orgDomain = getOrgDomain(user.email);
+        
+        res.json({
+            email: user.email,
+            displayName: user.display_name || '',
+            title: user.title || '',
+            createdAt: user.created_at,
+            organization: orgDomain ? {
+                domain: orgDomain,
+                hasSharedFolder: true
+            } : null
+        });
+    } catch (error) {
+        console.error('Get profile error:', error);
+        res.status(500).json({ error: 'Failed to get profile' });
+    }
+});
+
+// Update user profile
+app.put('/api/profile', authenticateToken, async (req, res) => {
+    try {
+        const { displayName, title } = req.body;
+        
+        // Update user record - add columns if they don't exist
+        await pool.query(`
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='display_name') THEN
+                    ALTER TABLE users ADD COLUMN display_name VARCHAR(100);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='title') THEN
+                    ALTER TABLE users ADD COLUMN title VARCHAR(100);
+                END IF;
+            END $$;
+        `);
+        
+        await pool.query(
+            'UPDATE users SET display_name = $1, title = $2, updated_at = NOW() WHERE email = $3',
+            [displayName || null, title || null, req.user.email]
+        );
+        
+        res.json({ message: 'Profile updated successfully' });
+    } catch (error) {
+        console.error('Update profile error:', error);
+        res.status(500).json({ error: 'Failed to update profile' });
+    }
+});
+
+// ==================== SHARED FOLDER ROUTES ====================
+
+// List shared folder contents
+app.get('/api/shared', authenticateToken, async (req, res) => {
+    try {
+        const orgDomain = getOrgDomain(req.user.email);
+        
+        if (!orgDomain) {
+            return res.json({ 
+                available: false, 
+                message: 'Shared folders are available for organization email addresses',
+                folders: [],
+                files: []
+            });
+        }
+        
+        const folder = req.query.folder || '';
+        let prefix = `${getSharedPrefix(orgDomain)}${folder}`.replace(/\/+/g, '/');
+        if (!prefix.endsWith('/')) prefix += '/';
+        
+        // Create shared folder structure if it doesn't exist
+        try {
+            await s3Client.send(new PutObjectCommand({
+                Bucket: BUCKET,
+                Key: `${getSharedPrefix(orgDomain)}.keep`,
+                Body: '',
+                ContentType: 'text/plain'
+            }));
+        } catch (e) { /* ignore */ }
+        
+        const response = await s3Client.send(new ListObjectsV2Command({
+            Bucket: BUCKET, Prefix: prefix, Delimiter: '/'
+        }));
+        
+        const folders = (response.CommonPrefixes || []).map(p => ({
+            name: p.Prefix.replace(prefix, '').replace(/\/$/, ''),
+            type: 'folder'
+        })).filter(f => f.name && f.name !== '.keep');
+        
+        const files = (response.Contents || [])
+            .filter(obj => !obj.Key.endsWith('/.keep') && obj.Key !== prefix)
+            .map(obj => ({
+                name: obj.Key.split('/').pop(),
+                type: 'file',
+                size: obj.Size,
+                modified: obj.LastModified,
+                key: obj.Key,
+                path: obj.Key
+            }));
+        
+        res.json({ 
+            available: true,
+            organization: orgDomain,
+            folders, 
+            files, 
+            currentPath: folder 
+        });
+    } catch (error) {
+        console.error('List shared files error:', error);
+        res.status(500).json({ error: 'Failed to list shared files' });
+    }
+});
+
+// Upload to shared folder
+app.post('/api/shared/upload', authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+        const orgDomain = getOrgDomain(req.user.email);
+        
+        if (!orgDomain) {
+            return res.status(403).json({ error: 'Shared folders require organization email' });
+        }
+        
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+        
+        const folder = req.body.folder || '';
+        const key = `${getSharedPrefix(orgDomain)}${folder}/${req.file.originalname}`.replace(/\/+/g, '/');
+        
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype
+        }));
+        
+        res.json({ message: 'File uploaded to shared folder', key });
+    } catch (error) {
+        console.error('Shared upload error:', error);
+        res.status(500).json({ error: 'Failed to upload to shared folder' });
+    }
+});
+
+// Create folder in shared space
+app.post('/api/shared/folder', authenticateToken, async (req, res) => {
+    try {
+        const orgDomain = getOrgDomain(req.user.email);
+        
+        if (!orgDomain) {
+            return res.status(403).json({ error: 'Shared folders require organization email' });
+        }
+        
+        const { path, name } = req.body;
+        if (!name) {
+            return res.status(400).json({ error: 'Folder name is required' });
+        }
+        
+        const folderPath = path ? `${path}/${name}` : name;
+        const key = `${getSharedPrefix(orgDomain)}${folderPath}/.keep`;
+        
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: key,
+            Body: '',
+            ContentType: 'text/plain'
+        }));
+        
+        res.json({ message: 'Shared folder created', path: folderPath });
+    } catch (error) {
+        console.error('Create shared folder error:', error);
+        res.status(500).json({ error: 'Failed to create shared folder' });
+    }
+});
+
+// Delete from shared folder
+app.delete('/api/shared', authenticateToken, async (req, res) => {
+    try {
+        const orgDomain = getOrgDomain(req.user.email);
+        
+        if (!orgDomain) {
+            return res.status(403).json({ error: 'Shared folders require organization email' });
+        }
+        
+        const { key, path, type } = req.body;
+        const sharedPrefix = getSharedPrefix(orgDomain);
+        
+        // Determine the full key
+        let fullKey = key;
+        if (!fullKey && path) {
+            fullKey = `${sharedPrefix}${path}`;
+        }
+        
+        // Security check - ensure the key belongs to this org's shared folder
+        if (!fullKey || !fullKey.startsWith(sharedPrefix.replace(/\/$/, ''))) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        if (type === 'folder') {
+            // Delete all contents in the folder
+            const prefix = fullKey.endsWith('/') ? fullKey : fullKey + '/';
+            const listResponse = await s3Client.send(new ListObjectsV2Command({
+                Bucket: BUCKET, Prefix: prefix
+            }));
+            
+            if (listResponse.Contents && listResponse.Contents.length > 0) {
+                for (const obj of listResponse.Contents) {
+                    await s3Client.send(new DeleteObjectCommand({
+                        Bucket: BUCKET, Key: obj.Key
+                    }));
+                }
+            }
+        } else {
+            await s3Client.send(new DeleteObjectCommand({
+                Bucket: BUCKET, Key: fullKey
+            }));
+        }
+        
+        res.json({ message: 'Deleted from shared folder' });
+    } catch (error) {
+        console.error('Delete from shared error:', error);
+        res.status(500).json({ error: 'Failed to delete from shared folder' });
+    }
+});
+
+// Get signed URL for shared file
+app.get('/api/shared/url', authenticateToken, async (req, res) => {
+    try {
+        const orgDomain = getOrgDomain(req.user.email);
+        
+        if (!orgDomain) {
+            return res.status(403).json({ error: 'Shared folders require organization email' });
+        }
+        
+        const { key, path } = req.query;
+        const sharedPrefix = getSharedPrefix(orgDomain);
+        
+        let fullKey = key;
+        if (!fullKey && path) {
+            fullKey = `${sharedPrefix}${path}`;
+        }
+        
+        // Security check
+        if (!fullKey || !fullKey.startsWith(sharedPrefix.replace(/\/$/, ''))) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        const url = await getSignedUrl(s3Client, new GetObjectCommand({
+            Bucket: BUCKET, Key: fullKey
+        }), { expiresIn: 3600 });
+        
+        res.json({ url });
+    } catch (error) {
+        console.error('Get shared URL error:', error);
+        res.status(500).json({ error: 'Failed to get URL' });
     }
 });
 

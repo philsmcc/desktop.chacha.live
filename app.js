@@ -1302,6 +1302,61 @@ class DesktopOS {
 
         // Render user wallpapers
         this.refreshWallpaperGrid();
+        
+        // Profile save handler
+        const saveProfileBtn = windowEl.querySelector('#save-profile-btn');
+        if (saveProfileBtn) {
+            saveProfileBtn.addEventListener('click', async () => {
+                const nameInput = windowEl.querySelector('#profile-name');
+                const titleInput = windowEl.querySelector('#profile-title');
+                
+                const displayName = nameInput?.value?.trim() || '';
+                const title = titleInput?.value?.trim() || '';
+                
+                saveProfileBtn.disabled = true;
+                saveProfileBtn.textContent = 'Saving...';
+                
+                try {
+                    await this.api('/profile', {
+                        method: 'PUT',
+                        body: JSON.stringify({ displayName, title })
+                    });
+                    
+                    // Update local user data
+                    if (this.currentUser) {
+                        this.currentUser.displayName = displayName;
+                        this.currentUser.title = title;
+                        // Persist to localStorage
+                        localStorage.setItem("hovercam_session", JSON.stringify(this.currentUser));
+                    }
+                    
+                    // Update UI
+                    const userInfo = windowEl.querySelector('.user-info');
+                    if (userInfo) {
+                        userInfo.querySelector('.user-name').textContent = displayName || this.currentUser?.username || 'User';
+                        userInfo.querySelector('.user-role').textContent = title || 'User';
+                    }
+                    
+                    // Update topbar
+                    const currentUserEl = document.getElementById('current-user');
+                    if (currentUserEl && displayName) {
+                        currentUserEl.textContent = displayName;
+                    }
+                    
+                    this.showNotification('Profile saved successfully', 'success');
+                    saveProfileBtn.textContent = 'Saved!';
+                    setTimeout(() => {
+                        saveProfileBtn.textContent = 'Save Profile';
+                        saveProfileBtn.disabled = false;
+                    }, 2000);
+                } catch (error) {
+                    console.error('Failed to save profile:', error);
+                    this.showNotification('Failed to save profile', 'error');
+                    saveProfileBtn.textContent = 'Save Profile';
+                    saveProfileBtn.disabled = false;
+                }
+            });
+        }
     }
 
     clearWallpaperSelections(windowEl) {
@@ -4485,12 +4540,33 @@ class DesktopOS {
         let currentPath = '';
         let currentFiles = [];
         let currentFolders = [];
+        let isInSharedFolder = false;
+        let sharedFolderAvailable = false;
+        let organizationDomain = null;
         
-        // Load files from S3
+        // Check if user has access to shared folder
+        const checkSharedFolder = async () => {
+            try {
+                const response = await self.api('/shared');
+                sharedFolderAvailable = response.available;
+                organizationDomain = response.organization || null;
+            } catch (e) {
+                sharedFolderAvailable = false;
+            }
+        };
+        
+        // Load files from S3 (or shared folder)
         const loadFiles = async () => {
             statusText.textContent = 'Loading...';
             try {
-                const response = await self.api('/files?folder=' + encodeURIComponent(currentPath));
+                let response;
+                if (isInSharedFolder) {
+                    // Load from shared folder
+                    const sharedPath = currentPath.replace('Shared/', '');
+                    response = await self.api('/shared?folder=' + encodeURIComponent(sharedPath));
+                } else {
+                    response = await self.api('/files?folder=' + encodeURIComponent(currentPath));
+                }
                 currentFolders = response.folders || [];
                 currentFiles = response.files || [];
                 renderFiles();
@@ -4504,9 +4580,16 @@ class DesktopOS {
             }
         };
         
+        // Initialize shared folder check
+        checkSharedFolder();
+        
         // Render files and folders
         const renderFiles = () => {
-            if (currentFolders.length === 0 && currentFiles.length === 0) {
+            // Check if we should show shared folder (at root level and if available)
+            const showSharedFolder = !currentPath && sharedFolderAvailable && !isInSharedFolder;
+            const hasContent = currentFolders.length > 0 || currentFiles.length > 0 || showSharedFolder;
+            
+            if (!hasContent) {
                 filesGrid.innerHTML = '';
                 filesEmpty.classList.remove('hidden');
             } else {
@@ -4514,7 +4597,21 @@ class DesktopOS {
                 
                 let html = '';
                 
-                // Render folders
+                // Show Shared folder at root level if available
+                if (showSharedFolder) {
+                    html += '<div class="file-item folder-item shared-folder-item" data-type="shared-folder" data-path="Shared">' +
+                        '<div class="file-icon shared-folder-icon">' +
+                            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+                                '<path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>' +
+                                '<circle cx="18" cy="6" r="4" fill="#10b981" stroke="#10b981"/>' +
+                                '<path d="M18 4v4M16 6h4" stroke="white" stroke-width="1.5"/>' +
+                            '</svg>' +
+                        '</div>' +
+                        '<span class="file-name">Shared (' + organizationDomain + ')</span>' +
+                    '</div>';
+                }
+                
+                // Render regular folders
                 currentFolders.forEach(folder => {
                     html += '<div class="file-item folder-item" data-type="folder" data-path="' + folder.name + '">' +
                         '<div class="file-icon folder-icon">' +
@@ -4555,13 +4652,24 @@ class DesktopOS {
                     }
                 });
                 
-                // Add click handlers for folders
+                // Add click handlers for folders (including shared folder)
                 filesGrid.querySelectorAll('.folder-item').forEach(item => {
                     item.addEventListener('dblclick', () => {
+                        const folderType = item.dataset.type;
                         const folderName = item.dataset.path;
-                        currentPath = currentPath ? currentPath + '/' + folderName : folderName;
-                        updatePath();
-                        loadFiles();
+                        
+                        if (folderType === 'shared-folder') {
+                            // Entering shared folder
+                            isInSharedFolder = true;
+                            currentPath = '';
+                            updatePath();
+                            loadFiles();
+                        } else {
+                            // Regular folder navigation
+                            currentPath = currentPath ? currentPath + '/' + folderName : folderName;
+                            updatePath();
+                            loadFiles();
+                        }
                     });
                 });
                 
@@ -4614,18 +4722,42 @@ class DesktopOS {
         // Update path display
         const updatePath = () => {
             const parts = currentPath.split('/').filter(p => p);
-            let html = '<span class="path-segment" data-path="">My Files</span>';
-            let buildPath = '';
-            parts.forEach(part => {
-                buildPath = buildPath ? buildPath + '/' + part : part;
-                html += '<span class="path-sep">/</span><span class="path-segment" data-path="' + buildPath + '">' + part + '</span>';
-            });
+            let html = '';
+            
+            if (isInSharedFolder) {
+                // Shared folder path display
+                html = '<span class="path-segment path-shared" data-path="" data-shared="exit">My Files</span>';
+                html += '<span class="path-sep">/</span><span class="path-segment path-shared-active" data-path="" data-shared="root">🔗 Shared (' + organizationDomain + ')</span>';
+                let buildPath = '';
+                parts.forEach(part => {
+                    buildPath = buildPath ? buildPath + '/' + part : part;
+                    html += '<span class="path-sep">/</span><span class="path-segment" data-path="' + buildPath + '">' + part + '</span>';
+                });
+            } else {
+                // Regular path display
+                html = '<span class="path-segment" data-path="">My Files</span>';
+                let buildPath = '';
+                parts.forEach(part => {
+                    buildPath = buildPath ? buildPath + '/' + part : part;
+                    html += '<span class="path-sep">/</span><span class="path-segment" data-path="' + buildPath + '">' + part + '</span>';
+                });
+            }
+            
             pathDisplay.innerHTML = html;
             
             // Add click handlers
             pathDisplay.querySelectorAll('.path-segment').forEach(seg => {
                 seg.addEventListener('click', () => {
-                    currentPath = seg.dataset.path;
+                    if (seg.dataset.shared === 'exit') {
+                        // Exit shared folder, go to My Files root
+                        isInSharedFolder = false;
+                        currentPath = '';
+                    } else if (seg.dataset.shared === 'root') {
+                        // Go to shared folder root
+                        currentPath = '';
+                    } else {
+                        currentPath = seg.dataset.path;
+                    }
                     updatePath();
                     loadFiles();
                 });
@@ -4981,7 +5113,7 @@ class DesktopOS {
                 '<div class="category-header">' +
                     '<div class="category-header-left">' +
                         userIcon +
-                        '<span>Account</span>' +
+                        '<span>Account & Profile</span>' +
                     '</div>' +
                     chevronIcon +
                 '</div>' +
@@ -4990,10 +5122,26 @@ class DesktopOS {
                         '<div class="user-profile">' +
                             '<div class="user-avatar">' + initial + '</div>' +
                             '<div class="user-info">' +
-                                '<div class="user-name">' + username + '</div>' +
-                                '<div class="user-role">Administrator</div>' +
+                                '<div class="user-name">' + (this.currentUser?.displayName || username) + '</div>' +
+                                '<div class="user-role">' + (this.currentUser?.title || 'User') + '</div>' +
+                                '<div class="user-email">' + username + '</div>' +
                             '</div>' +
                         '</div>' +
+                        '<div class="profile-form">' +
+                            '<div class="profile-field">' +
+                                '<label>Display Name</label>' +
+                                '<input type="text" id="profile-name" placeholder="Enter your name" value="' + (this.currentUser?.displayName || '') + '">' +
+                            '</div>' +
+                            '<div class="profile-field">' +
+                                '<label>Title / Role (optional)</label>' +
+                                '<input type="text" id="profile-title" placeholder="e.g. Teacher, Engineer, Designer" value="' + (this.currentUser?.title || '') + '">' +
+                            '</div>' +
+                            '<button class="profile-save-btn" id="save-profile-btn">Save Profile</button>' +
+                        '</div>' +
+                        (this.currentUser?.organization ? 
+                            '<div class="organization-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Organization: ' + this.currentUser.organization.domain + '</div>' :
+                            '<div class="no-org-badge">Personal Account (no shared folder)</div>'
+                        ) +
                     '</div>' +
                 '</div>' +
             '</div>' +
