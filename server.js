@@ -2472,10 +2472,15 @@ app.post('/api/lesson/search-images', authenticateToken, async (req, res) => {
             console.log('Error searching Commons:', e.message);
         }
         
-        // Return unique images
+        // Return unique images with proxied URLs
         const uniqueImages = images.filter((img, idx, arr) => 
             arr.findIndex(i => i.url === img.url) === idx
-        ).slice(0, count * 2);
+        ).slice(0, count * 2).map(img => ({
+            ...img,
+            // Use proxy URL for display to avoid CORS issues
+            proxyUrl: `/api/lesson/proxy-image?url=${encodeURIComponent(img.url)}`,
+            originalUrl: img.url
+        }));
         
         res.json({ images: uniqueImages });
     } catch (error) {
@@ -2484,29 +2489,31 @@ app.post('/api/lesson/search-images', authenticateToken, async (req, res) => {
     }
 });
 
-// Generate AI images for lesson content using Bedrock Titan Image Generator
+// Generate AI images for lesson content using Amazon Nova Canvas
 app.post('/api/lesson/generate-image', authenticateToken, async (req, res) => {
     try {
         const { prompt, style = 'educational' } = req.body;
         
         // Enhance prompt for educational context
-        const enhancedPrompt = `Educational illustration for classroom use: ${prompt}. Style: clean, colorful, age-appropriate, detailed diagram suitable for students. No text or labels in image.`;
+        const enhancedPrompt = `Educational illustration for classroom use: ${prompt}. Style: clean, colorful, age-appropriate, detailed scientific diagram suitable for students.`;
         
-        // Use Amazon Titan Image Generator
+        // Use Amazon Nova Canvas (replacement for deprecated Titan Image Generator)
         const command = new InvokeModelCommand({
-            modelId: 'amazon.titan-image-generator-v1',
+            modelId: 'amazon.nova-canvas-v1:0',
             contentType: 'application/json',
             accept: 'application/json',
             body: JSON.stringify({
                 taskType: 'TEXT_IMAGE',
                 textToImageParams: {
-                    text: enhancedPrompt
+                    text: enhancedPrompt,
+                    negativeText: 'blurry, distorted, low quality, text, watermark, logo'
                 },
                 imageGenerationConfig: {
                     numberOfImages: 1,
-                    height: 512,
-                    width: 512,
-                    cfgScale: 8.0
+                    height: 720,
+                    width: 1280,
+                    cfgScale: 7.0,
+                    seed: Math.floor(Math.random() * 1000000)
                 }
             })
         });
@@ -2535,7 +2542,7 @@ app.post('/api/lesson/generate-image', authenticateToken, async (req, res) => {
             res.json({ 
                 url: imageUrl,
                 title: prompt,
-                source: 'AI Generated',
+                source: 'AI Generated (Nova Canvas)',
                 generated: true
             });
         } else {
@@ -2544,6 +2551,31 @@ app.post('/api/lesson/generate-image', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Image generation error:', error);
         res.status(500).json({ error: 'Failed to generate image: ' + error.message });
+    }
+});
+
+// Proxy endpoint for Wikipedia images (to avoid CORS issues)
+app.get('/api/lesson/proxy-image', authenticateToken, async (req, res) => {
+    try {
+        const { url } = req.query;
+        if (!url) {
+            return res.status(400).json({ error: 'URL required' });
+        }
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error('Failed to fetch image');
+        }
+        
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+        const buffer = await response.arrayBuffer();
+        
+        res.set('Content-Type', contentType);
+        res.set('Cache-Control', 'public, max-age=86400');
+        res.send(Buffer.from(buffer));
+    } catch (error) {
+        console.error('Image proxy error:', error);
+        res.status(500).json({ error: 'Failed to proxy image' });
     }
 });
 

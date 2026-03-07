@@ -6454,7 +6454,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 if (response.images && response.images.length > 0) {
                     resultsEl.innerHTML = '<div class="image-grid">' + response.images.map((img, idx) => 
                         '<div class="image-result" data-idx="' + idx + '">' +
-                            '<img src="' + img.url + '" alt="' + (img.title || 'Image') + '" loading="lazy">' +
+                            '<img src="' + (img.proxyUrl || img.url) + '" alt="' + (img.title || 'Image') + '" loading="lazy">' +
                             '<div class="image-info"><p class="image-title">' + (img.title || 'Untitled').substring(0, 50) + '</p><span class="image-source">' + img.source + '</span></div>' +
                             '<button class="select-image-btn">+ Add</button>' +
                         '</div>'
@@ -6517,7 +6517,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
             
             listEl.innerHTML = selectedImages.map((img, idx) => 
                 '<div class="selected-image-item">' +
-                    '<img src="' + img.url + '" alt="' + (img.title || 'Image') + '">' +
+                    '<img src="' + (img.proxyUrl || img.url) + '" alt="' + (img.title || 'Image') + '">' +
                     '<span>' + (img.title || 'Image').substring(0, 30) + '</span>' +
                     '<button class="remove-image-btn" data-idx="' + idx + '">×</button>' +
                 '</div>'
