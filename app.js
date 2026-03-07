@@ -4843,10 +4843,19 @@ class DesktopOS {
                 
                 statusText.textContent = 'Deleting...';
                 try {
-                    await self.api('/files', {
-                        method: 'DELETE',
-                        body: JSON.stringify({ path: pathToDelete, type })
-                    });
+                    if (isInSharedFolder) {
+                        // Delete from shared folder
+                        await self.api('/shared', {
+                            method: 'DELETE',
+                            body: JSON.stringify({ path: pathToDelete, type })
+                        });
+                    } else {
+                        // Delete from user's folder
+                        await self.api('/files', {
+                            method: 'DELETE',
+                            body: JSON.stringify({ path: pathToDelete, type })
+                        });
+                    }
                     statusText.textContent = 'Deleted successfully';
                     loadFiles();
                 } catch (error) {
@@ -4872,10 +4881,19 @@ class DesktopOS {
                 const folderPath = currentPath ? currentPath + '/' + name.trim() : name.trim();
                 statusText.textContent = 'Creating folder...';
                 try {
-                    await self.api('/files/folder', {
-                        method: 'POST',
-                        body: JSON.stringify({ path: folderPath })
-                    });
+                    if (isInSharedFolder) {
+                        // Create in shared folder
+                        await self.api('/shared/folder', {
+                            method: 'POST',
+                            body: JSON.stringify({ path: folderPath })
+                        });
+                    } else {
+                        // Create in user's folder
+                        await self.api('/files/folder', {
+                            method: 'POST',
+                            body: JSON.stringify({ path: folderPath })
+                        });
+                    }
                     statusText.textContent = 'Folder created: ' + name.trim();
                     loadFiles();
                 } catch (error) {
@@ -4893,10 +4911,12 @@ class DesktopOS {
                     
                     const formData = new FormData();
                     formData.append('file', file);
+                    formData.append('folder', currentPath);
                     
                     try {
-                        console.log('Uploading to folder:', currentPath);
-                        const response = await fetch('/api/files/upload?folder=' + encodeURIComponent(currentPath), {
+                        console.log('Uploading to folder:', currentPath, 'isShared:', isInSharedFolder);
+                        const endpoint = isInSharedFolder ? '/api/shared/upload' : '/api/files/upload?folder=' + encodeURIComponent(currentPath);
+                        const response = await fetch(endpoint, {
                             method: 'POST',
                             headers: {
                                 'Authorization': 'Bearer ' + self.token
