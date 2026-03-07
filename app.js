@@ -4634,9 +4634,6 @@ class DesktopOS {
             }
         };
         
-        // Initialize shared folder check
-        checkSharedFolder();
-        
         // Render files and folders
         const renderFiles = () => {
             // Check if we should show shared folder (at root level and if available)
@@ -5015,22 +5012,33 @@ class DesktopOS {
         // Navigation buttons
         windowEl.querySelector('[data-action="back"]').addEventListener('click', () => {
             if (currentPath) {
+                // Navigate up within current context
                 const lastSlash = currentPath.lastIndexOf('/');
                 currentPath = lastSlash > 0 ? currentPath.substring(0, lastSlash) : '';
+                updatePath();
+                loadFiles();
+            } else if (isInSharedFolder) {
+                // Exit shared folder when at its root
+                isInSharedFolder = false;
+                currentPath = '';
                 updatePath();
                 loadFiles();
             }
         });
         
         windowEl.querySelector('[data-action="home"]').addEventListener('click', () => {
+            // Always go to My Files root
+            isInSharedFolder = false;
             currentPath = '';
             updatePath();
             loadFiles();
         });
         
-        // Initial load
-        loadFiles();
-        updatePath();
+        // Initial load - wait for shared folder check
+        checkSharedFolder().then(() => {
+            loadFiles();
+            updatePath();
+        });
     }
 
 
