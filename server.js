@@ -2489,31 +2489,31 @@ app.post('/api/lesson/search-images', authenticateToken, async (req, res) => {
     }
 });
 
-// Generate AI images for lesson content using Amazon Nova Canvas
+// Generate AI images for lesson content using Amazon Titan Image Generator v2
 app.post('/api/lesson/generate-image', authenticateToken, async (req, res) => {
     try {
         const { prompt, style = 'educational' } = req.body;
         
         // Enhance prompt for educational context
-        const enhancedPrompt = `Educational illustration for classroom use: ${prompt}. Style: clean, colorful, age-appropriate, detailed scientific diagram suitable for students.`;
+        const enhancedPrompt = `Educational illustration for classroom use: ${prompt}. Style: clean, colorful, age-appropriate, detailed diagram suitable for students, high quality`;
         
-        // Use Amazon Nova Canvas (replacement for deprecated Titan Image Generator)
+        // Use Amazon Titan Image Generator v2 (available in us-west-2)
         const command = new InvokeModelCommand({
-            modelId: 'amazon.nova-canvas-v1:0',
+            modelId: 'amazon.titan-image-generator-v2:0',
             contentType: 'application/json',
             accept: 'application/json',
             body: JSON.stringify({
                 taskType: 'TEXT_IMAGE',
                 textToImageParams: {
                     text: enhancedPrompt,
-                    negativeText: 'blurry, distorted, low quality, text, watermark, logo'
+                    negativeText: 'blurry, distorted, low quality, text, watermark, logo, deformed'
                 },
                 imageGenerationConfig: {
                     numberOfImages: 1,
-                    height: 720,
-                    width: 1280,
-                    cfgScale: 7.0,
-                    seed: Math.floor(Math.random() * 1000000)
+                    height: 1024,
+                    width: 1024,
+                    cfgScale: 8.0,
+                    seed: Math.floor(Math.random() * 2147483646)
                 }
             })
         });
@@ -2542,7 +2542,7 @@ app.post('/api/lesson/generate-image', authenticateToken, async (req, res) => {
             res.json({ 
                 url: imageUrl,
                 title: prompt,
-                source: 'AI Generated (Nova Canvas)',
+                source: 'AI Generated (Titan v2)',
                 generated: true
             });
         } else {
