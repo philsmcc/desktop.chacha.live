@@ -1943,24 +1943,31 @@ Do NOT mention this extraction format to the user. Do NOT say anything about JSO
         // Extract JSON from response
         let extractedData = {};
         let readyToGenerate = false;
-        const jsonMatch = assistantMessage.match(/\`\`\`json\n?([\s\S]*?)\`\`\`/);
-        if (jsonMatch) {
+        
+        // Extract data from hidden markers
+        const extractMatch = assistantMessage.match(/\|\|\|EXTRACT\|\|\|(.+?)\|\|\|END\|\|\|/);
+        if (extractMatch) {
             try {
-                const parsed = JSON.parse(jsonMatch[1]);
+                const parsed = JSON.parse(extractMatch[1]);
                 extractedData = {
-                    subject: parsed.subject || currentData.subject,
-                    grade: parsed.grade || currentData.grade,
-                    topic: parsed.topic || currentData.topic,
-                    standard: parsed.standard || currentData.standard,
-                    duration: parsed.duration || currentData.duration
+                    subject: (parsed.subject && parsed.subject !== 'null') ? parsed.subject : currentData.subject,
+                    grade: (parsed.grade && parsed.grade !== 'null') ? parsed.grade : currentData.grade,
+                    topic: (parsed.topic && parsed.topic !== 'null') ? parsed.topic : currentData.topic,
+                    standard: (parsed.standard && parsed.standard !== 'null') ? parsed.standard : currentData.standard,
+                    duration: (parsed.duration && parsed.duration !== 'null') ? parsed.duration : currentData.duration
                 };
-                readyToGenerate = parsed.readyToGenerate || false;
-                // Remove JSON from displayed message
-                assistantMessage = assistantMessage.replace(/\`\`\`json[\s\S]*?\`\`\`/, '').trim();
+                readyToGenerate = parsed.readyToGenerate === true;
+                // Remove extraction markers from displayed message
+                assistantMessage = assistantMessage.replace(/\s*\|\|\|EXTRACT\|\|\|.+?\|\|\|END\|\|\|/, '').trim();
             } catch (e) {
-                console.log('JSON parse error:', e);
+                console.log('Extract parse error:', e);
+                // Still try to remove the markers even if parse fails
+                assistantMessage = assistantMessage.replace(/\s*\|\|\|EXTRACT\|\|\|.+?\|\|\|END\|\|\|/, '').trim();
             }
         }
+        
+        console.log('Lesson chat - extractedData:', extractedData);
+        console.log('Lesson chat - readyToGenerate:', readyToGenerate);
         
         res.json({
             message: assistantMessage,
