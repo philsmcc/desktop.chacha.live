@@ -1527,7 +1527,7 @@ app.get('/api/admin/ai-settings', authenticateToken, requireAdmin, async (req, r
 // Update AI settings (admin only)
 app.put('/api/admin/ai-settings', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const { system_prompt, model_id, max_tokens, temperature } = req.body;
+        const { system_prompt, model_id, max_tokens, temperature, product_info } = req.body;
         
         if (system_prompt !== undefined) {
             await pool.query(
@@ -1551,6 +1551,12 @@ app.put('/api/admin/ai-settings', authenticateToken, requireAdmin, async (req, r
             await pool.query(
                 'UPDATE ai_settings SET setting_value = $1, updated_at = NOW(), updated_by = $2 WHERE setting_key = $3',
                 [String(temperature), req.user.id, 'temperature']
+            );
+        }
+        if (product_info !== undefined) {
+            await pool.query(
+                'UPDATE ai_settings SET setting_value = $1, updated_at = NOW(), updated_by = $2 WHERE setting_key = $3',
+                [product_info, req.user.id, 'product_info']
             );
         }
         
@@ -1634,12 +1640,14 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
                 recent.map(h => `${h.role}: ${h.content}`).join('\n');
         }
 
-        // Build the full prompt for Titan
+        // Build the full prompt
         const systemPrompt = settings.system_prompt || 'You are a helpful assistant.';
+        const productInfo = settings.product_info || '';
         const userGreeting = userInfo.display_name ? `The teacher's name is ${userInfo.display_name}.` : '';
         
         const fullPrompt = `${systemPrompt}
 
+${productInfo ? `\n${productInfo}\n` : ''}
 ${userGreeting}
 ${memoryContext}
 ${recentHistory}
@@ -1647,16 +1655,33 @@ ${recentHistory}
 User: ${message}
 Assistant:`;
 
-        // Call Bedrock Titan
-        const modelId = settings.model_id || 'amazon.titan-text-express-v1';
+        // Call Bedrock model
+        const modelId = settings.model_id || 'amazon.nova-lite-v1:0';
         const maxTokens = parseInt(settings.max_tokens) || 500;
         const temperature = parseFloat(settings.temperature) || 0.7;
 
-        const command = new InvokeModelCommand({
-            modelId: modelId,
-            contentType: 'application/json',
-            accept: 'application/json',
-            body: JSON.stringify({
+        let requestBody;
+        let assistantMessage;
+
+        // Nova models use a different format than Titan
+        if (modelId.includes('nova')) {
+            // Amazon Nova format (uses messages API like Claude)
+            requestBody = {
+                messages: [
+                    {
+                        role: 'user',
+                        content: [{ text: fullPrompt }]
+                    }
+                ],
+                inferenceConfig: {
+                    maxTokens: maxTokens,
+                    temperature: temperature,
+                    topP: 0.9
+                }
+            };
+        } else {
+            // Titan format
+            requestBody = {
                 inputText: fullPrompt,
                 textGenerationConfig: {
                     maxTokenCount: maxTokens,
@@ -1664,12 +1689,25 @@ Assistant:`;
                     topP: 0.9,
                     stopSequences: ['User:', '\n\nUser:']
                 }
-            })
+            };
+        }
+
+        const command = new InvokeModelCommand({
+            modelId: modelId,
+            contentType: 'application/json',
+            accept: 'application/json',
+            body: JSON.stringify(requestBody)
         });
 
         const response = await bedrockClient.send(command);
         const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-        let assistantMessage = responseBody.results?.[0]?.outputText || 'I apologize, I had trouble responding. Could you try again?';
+        
+        // Parse response based on model type
+        if (modelId.includes('nova')) {
+            assistantMessage = responseBody.output?.message?.content?.[0]?.text || 'I apologize, I had trouble responding. Could you try again?';
+        } else {
+            assistantMessage = responseBody.results?.[0]?.outputText || 'I apologize, I had trouble responding. Could you try again?';
+        }
         
         // Clean up the response
         assistantMessage = assistantMessage.trim();

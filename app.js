@@ -97,6 +97,14 @@ class DesktopOS {
                 defaultSize: { width: 1000, height: 700 },
                 content: () => this.renderUserManagerApp(),
                 adminOnly: true
+            },
+            {
+                id: "aisettings",
+                name: "AI Settings",
+                icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73v.27h1a7 7 0 0 1 7 7h.27c.34-.6.99-1 1.73-1a2 2 0 0 1 0 4c-.74 0-1.39-.4-1.73-1H21a7 7 0 0 1-7 7v.27c.6.34 1 .99 1 1.73a2 2 0 0 1-4 0c0-.74.4-1.39 1-1.73V21a7 7 0 0 1-7-7h-.27c-.34.6-.99 1-1.73 1a2 2 0 0 1 0-4c.74 0 1.39.4 1.73 1H5a7 7 0 0 1 7-7v-.27c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
+                defaultSize: { width: 900, height: 700 },
+                content: () => this.renderAISettingsApp(),
+                adminOnly: true
             }
         ];
         
@@ -1465,6 +1473,10 @@ class DesktopOS {
         
         if (appId === "terminal") {
             setTimeout(() => this.initTerminal(windowEl), 50);
+        }
+        
+        if (appId === "aisettings") {
+            setTimeout(() => this.initAISettings(windowEl), 50);
         }
     }
 
@@ -5477,11 +5489,38 @@ class DesktopOS {
                     self.addTerminalLine(output, 'user', message);
                     self.addTerminalLine(output, 'system', 
                         'Commands:\n' +
-                        '  clear  - Clear the chat history\n' +
-                        '  help   - Show this help message\n' +
-                        '  forget - Clear ChaCha\'s memory of you\n' +
+                        '  clear   - Clear the chat display\n' +
+                        '  help    - Show this help message\n' +
+                        '  context - Show what ChaCha remembers about you\n' +
+                        '  forget  - Clear ChaCha\'s memory of you\n' +
                         '\nOr just type anything to chat with ChaCha!'
                     );
+                    input.value = '';
+                    return;
+                }
+                
+                if (message.toLowerCase() === 'context') {
+                    self.addTerminalLine(output, 'user', message);
+                    try {
+                        const ctx = await self.api('/chat/context');
+                        let contextInfo = '=== ChaCha\'s Memory ===\n\n';
+                        
+                        if (ctx.memories && ctx.memories.length > 0) {
+                            contextInfo += '📝 What I remember about you:\n';
+                            ctx.memories.forEach(m => {
+                                contextInfo += '  • ' + m + '\n';
+                            });
+                        } else {
+                            contextInfo += '📝 No memories stored yet.\n';
+                        }
+                        
+                        contextInfo += '\n💬 Recent conversation: ' + (ctx.conversationHistory?.length || 0) + ' messages\n';
+                        contextInfo += '🕐 Last chat: ' + (ctx.lastChat ? new Date(ctx.lastChat).toLocaleString() : 'Never');
+                        
+                        self.addTerminalLine(output, 'system', contextInfo);
+                    } catch (error) {
+                        self.addTerminalLine(output, 'error', 'Failed to get context: ' + error.message);
+                    }
                     input.value = '';
                     return;
                 }
@@ -5734,6 +5773,140 @@ class DesktopOS {
     }
 
     
+
+    
+    renderAISettingsApp() {
+        return '<div class="ai-settings-app">' +
+            '<div class="admin-header">' +
+                '<h2>🤖 AI Settings - ChaCha Configuration</h2>' +
+            '</div>' +
+            '<div class="ai-settings-content">' +
+                '<div class="ai-settings-section">' +
+                    '<h3>Model Configuration</h3>' +
+                    '<div class="setting-group">' +
+                        '<label>Model ID</label>' +
+                        '<input type="text" id="ai-model-id" placeholder="us.amazon.nova-pro-v1:0">' +
+                        '<span class="setting-hint">e.g., us.amazon.nova-pro-v1:0, amazon.titan-text-premier-v1:0</span>' +
+                    '</div>' +
+                    '<div class="setting-row">' +
+                        '<div class="setting-group half">' +
+                            '<label>Temperature</label>' +
+                            '<input type="number" id="ai-temperature" min="0" max="1" step="0.1" placeholder="0.7">' +
+                            '<span class="setting-hint">0 = focused, 1 = creative</span>' +
+                        '</div>' +
+                        '<div class="setting-group half">' +
+                            '<label>Max Tokens</label>' +
+                            '<input type="number" id="ai-max-tokens" min="100" max="4000" step="100" placeholder="500">' +
+                            '<span class="setting-hint">Response length limit</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="ai-settings-section">' +
+                    '<h3>System Prompt</h3>' +
+                    '<span class="setting-hint">Define ChaCha\'s personality and behavior</span>' +
+                    '<textarea id="ai-system-prompt" rows="12" placeholder="You are ChaCha, a friendly AI assistant..."></textarea>' +
+                '</div>' +
+                '<div class="ai-settings-section">' +
+                    '<h3>Product Information</h3>' +
+                    '<span class="setting-hint">HoverCam product details for tech support</span>' +
+                    '<textarea id="ai-product-info" rows="12" placeholder="HoverCam Product Information..."></textarea>' +
+                '</div>' +
+                '<div class="ai-settings-actions">' +
+                    '<button id="ai-settings-save" class="admin-btn save">💾 Save Settings</button>' +
+                    '<button id="ai-settings-reset" class="admin-btn cancel">↩️ Reset to Defaults</button>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
+    }
+    
+    initAISettings(windowEl) {
+        const self = this;
+        
+        const modelInput = windowEl.querySelector('#ai-model-id');
+        const tempInput = windowEl.querySelector('#ai-temperature');
+        const tokensInput = windowEl.querySelector('#ai-max-tokens');
+        const promptInput = windowEl.querySelector('#ai-system-prompt');
+        const productInput = windowEl.querySelector('#ai-product-info');
+        const saveBtn = windowEl.querySelector('#ai-settings-save');
+        const resetBtn = windowEl.querySelector('#ai-settings-reset');
+        
+        // Load current settings
+        async function loadSettings() {
+            try {
+                const settings = await self.api('/admin/ai-settings');
+                modelInput.value = settings.model_id || '';
+                tempInput.value = settings.temperature || '0.7';
+                tokensInput.value = settings.max_tokens || '500';
+                promptInput.value = settings.system_prompt || '';
+                productInput.value = settings.product_info || '';
+            } catch (error) {
+                self.showNotification('Failed to load AI settings: ' + error.message, 'error');
+            }
+        }
+        
+        // Save settings
+        saveBtn.addEventListener('click', async () => {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+            
+            try {
+                await self.api('/admin/ai-settings', {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        model_id: modelInput.value,
+                        temperature: tempInput.value,
+                        max_tokens: tokensInput.value,
+                        system_prompt: promptInput.value,
+                        product_info: productInput.value
+                    })
+                });
+                self.showNotification('AI settings saved successfully!');
+            } catch (error) {
+                self.showNotification('Failed to save settings: ' + error.message, 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = '💾 Save Settings';
+            }
+        });
+        
+        // Reset to defaults
+        resetBtn.addEventListener('click', async () => {
+            if (!confirm('Reset all AI settings to defaults? This cannot be undone.')) return;
+            
+            const defaultPrompt = `You are ChaCha, a friendly and helpful AI assistant for teachers. You have a warm, encouraging personality and love to help educators with their daily challenges.
+
+Your personality traits:
+- Warm and supportive - you genuinely care about teachers' wellbeing
+- Playful sense of humor - you enjoy sharing clean, family-friendly jokes
+- Good listener - you remember what teachers tell you and reference it later
+- Encouraging - you celebrate their wins and offer support during tough days
+- Knowledgeable but humble - you help with teaching ideas but acknowledge you're learning too
+
+When chatting:
+- Keep responses concise (1-3 sentences for casual chat)
+- Ask follow-up questions to get to know them better
+- Remember their name, subjects they teach, grade levels, hobbies
+- Offer a joke if they seem stressed
+- Be genuinely interested in their day and their students
+- Use occasional emoji sparingly to add warmth
+
+You are NOT a lesson planning tool (that comes later). You're here to be a friendly presence, a stress reliever, and someone who gets to know each teacher personally.
+
+Start by introducing yourself warmly and asking their name if you don't know it yet!`;
+
+            modelInput.value = 'us.amazon.nova-pro-v1:0';
+            tempInput.value = '0.7';
+            tokensInput.value = '500';
+            promptInput.value = defaultPrompt;
+            productInput.value = '';
+            
+            self.showNotification('Settings reset to defaults. Click Save to apply.');
+        });
+        
+        loadSettings();
+    }
+
+
     renderUserManagerApp() {
         const self = this;
         
