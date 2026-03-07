@@ -2784,12 +2784,14 @@ body.dark-theme .wb-minimap {
     opacity: 0.7;
 }
 
-/* Profile Section in Settings */
+/* Profile Section in Settings - Theme Consistent */
 .profile-form {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    padding: 16px;
+    gap: 12px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
 }
 
 .profile-field {
@@ -2801,54 +2803,54 @@ body.dark-theme .wb-minimap {
 .profile-field label {
     font-size: 12px;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--text-muted);
 }
 
 .profile-field input {
     padding: 10px 12px;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 14px;
-    background: white;
+    background: var(--bg-primary);
+    color: var(--text-primary);
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .profile-field input:focus {
     outline: none;
-    border-color: #f97316;
-    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
 }
 
-.dark-mode .profile-field input {
-    background: #374151;
-    border-color: #4b5563;
-    color: white;
-}
-
-.dark-mode .profile-field input:focus {
-    border-color: #f97316;
+.profile-field input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
 }
 
 .profile-save-btn {
     padding: 10px 20px;
-    background: linear-gradient(135deg, #f97316, #ea580c);
+    background: var(--primary-color);
     color: white;
     border: none;
     border-radius: 8px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+    align-self: flex-start;
 }
 
 .profile-save-btn:hover {
+    background: var(--primary-hover);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
 }
 
 .profile-save-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
     transform: none;
+    box-shadow: none;
 }
 
 .organization-badge {
@@ -2857,11 +2859,11 @@ body.dark-theme .wb-minimap {
     gap: 6px;
     padding: 6px 12px;
     background: rgba(16, 185, 129, 0.1);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    border-radius: 20px;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 6px;
     font-size: 12px;
     color: #10b981;
-    margin-top: 8px;
+    margin-top: 12px;
 }
 
 .organization-badge svg {
@@ -2874,9 +2876,9 @@ body.dark-theme .wb-minimap {
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: rgba(107, 114, 128, 0.1);
-    border: 1px solid rgba(107, 114, 128, 0.3);
-    border-radius: 20px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
     font-size: 12px;
     color: #6b7280;
     margin-top: 8px;
@@ -2885,38 +2887,10 @@ body.dark-theme .wb-minimap {
 /* User Email in Settings */
 .user-info .user-email {
     font-size: 11px;
-    color: #9ca3af;
+    color: var(--text-muted);
     margin-top: 2px;
-}
-
-.dark-mode .user-info .user-email {
-    color: #6b7280;
-}
-
-.dark-mode .profile-field label {
-    color: #9ca3af;
-}
-
-/* Profile form improvements */
-.profile-form {
-    border-top: 1px solid #e5e7eb;
-    margin-top: 16px;
-    padding-top: 16px;
-}
-
-.dark-mode .profile-form {
-    border-top-color: #374151;
 }
 
 .settings-card .user-profile {
     padding-bottom: 0;
-}
-
-/* Placeholder styling */
-.profile-field input::placeholder {
-    color: #9ca3af;
-}
-
-.dark-mode .profile-field input::placeholder {
-    color: #6b7280;
 }
