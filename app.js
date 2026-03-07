@@ -6274,7 +6274,8 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                         '<div class="step active" data-step="1"><span class="step-num">1</span><span class="step-label">Gather Info</span></div>' +
                         '<div class="step" data-step="2"><span class="step-num">2</span><span class="step-label">Generate Plan</span></div>' +
                         '<div class="step" data-step="3"><span class="step-num">3</span><span class="step-label">Review & Edit</span></div>' +
-                        '<div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">Export PDF</span></div>' +
+                        '<div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">Find Images</span></div>' +
+                        '<div class="step" data-step="5"><span class="step-num">5</span><span class="step-label">Save & Export</span></div>' +
                     '</div>' +
                     '<div class="lesson-history"><h4>Recent Lessons</h4><div class="history-list"></div></div>' +
                 '</div>' +
@@ -6302,10 +6303,19 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                         '<div class="generating-container"><div class="spinner"></div><h3>Generating Your Lesson Plan...</h3><p class="generating-status">Analyzing requirements...</p><div class="progress-bar"><div class="progress-fill"></div></div></div>' +
                     '</div>' +
                     '<div class="lesson-panel" id="lesson-step-3">' +
-                        '<div class="lesson-review"><div class="review-header"><h3 id="review-title">Lesson Plan Review</h3><div class="review-actions"><button id="lesson-regenerate" class="action-btn">🔄 Regenerate</button><button id="lesson-export-btn" class="action-btn primary">📄 Export PDF</button></div></div><div class="lesson-sections" id="lesson-sections"></div></div>' +
+                        '<div class="lesson-review"><div class="review-header"><h3 id="review-title">Lesson Plan Review</h3><div class="review-actions"><button id="lesson-regenerate" class="action-btn">🔄 Regenerate</button><button id="lesson-find-images" class="action-btn">🖼️ Find Images</button><button id="lesson-export-btn" class="action-btn primary">💾 Save & Export</button></div></div><div class="lesson-sections" id="lesson-sections"></div></div>' +
                     '</div>' +
                     '<div class="lesson-panel" id="lesson-step-4">' +
-                        '<div class="export-container"><div class="export-preview" id="pdf-preview"></div><div class="export-options"><h4>Export Options</h4><label class="checkbox-label"><input type="checkbox" id="include-images" checked> Include generated images</label><label class="checkbox-label"><input type="checkbox" id="include-standards" checked> Include standards alignment</label><label class="checkbox-label"><input type="checkbox" id="include-blended" checked> Include blended learning suggestions</label><button id="download-pdf-btn" class="download-btn">📥 Download PDF</button></div></div>' +
+                        '<div class="image-search-container">' +
+                            '<div class="image-search-header"><h3>🖼️ Find Visual Resources</h3><p>Search for educational images to include with your lesson plan</p></div>' +
+                            '<div class="image-search-input"><input type="text" id="image-search-query" placeholder="Search Wikipedia for images..."><button id="image-search-btn" class="search-btn">🔍 Search</button><button id="image-generate-btn" class="search-btn ai">✨ Generate AI Image</button></div>' +
+                            '<div class="image-results" id="image-results"><p class="placeholder-text">Enter a search term to find images from Wikipedia and Wikimedia Commons</p></div>' +
+                            '<div class="selected-images"><h4>Selected Images (<span id="selected-count">0</span>)</h4><div id="selected-images-list"></div></div>' +
+                            '<div class="image-actions"><button id="image-back-btn" class="action-btn">← Back to Plan</button><button id="image-continue-btn" class="action-btn primary">Continue to Export →</button></div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="lesson-panel" id="lesson-step-5">' +
+                        '<div class="export-container"><div class="export-preview" id="pdf-preview"></div><div class="export-options"><h4>Export Options</h4><label class="checkbox-label"><input type="checkbox" id="include-images" checked> Include selected images</label><label class="checkbox-label"><input type="checkbox" id="include-standards" checked> Include standards alignment</label><label class="checkbox-label"><input type="checkbox" id="include-blended" checked> Include blended learning suggestions</label><div class="export-buttons"><button id="save-to-files-btn" class="download-btn primary">💾 Save to My Files</button><button id="download-pdf-btn" class="download-btn">📥 Download PDF</button></div><p class="export-note" id="export-status"></p></div></div>' +
                     '</div>' +
                 '</div>' +
             '</div>' +
@@ -6428,8 +6438,101 @@ Start by introducing yourself warmly and asking their name if you don't know it 
             return '<div class="content-text">' + content + '</div>';
         }
         
+        // Selected images for the lesson
+        let selectedImages = [];
+        
+        async function searchImages() {
+            const query = windowEl.querySelector('#image-search-query').value.trim();
+            if (!query) return;
+            
+            const resultsEl = windowEl.querySelector('#image-results');
+            resultsEl.innerHTML = '<div class="loading-images"><div class="spinner"></div><p>Searching for images...</p></div>';
+            
+            try {
+                const response = await self.api('/lesson/search-images', { method: 'POST', body: JSON.stringify({ query, count: 8 }) });
+                
+                if (response.images && response.images.length > 0) {
+                    resultsEl.innerHTML = '<div class="image-grid">' + response.images.map((img, idx) => 
+                        '<div class="image-result" data-idx="' + idx + '">' +
+                            '<img src="' + img.url + '" alt="' + (img.title || 'Image') + '" loading="lazy">' +
+                            '<div class="image-info"><p class="image-title">' + (img.title || 'Untitled').substring(0, 50) + '</p><span class="image-source">' + img.source + '</span></div>' +
+                            '<button class="select-image-btn">+ Add</button>' +
+                        '</div>'
+                    ).join('') + '</div>';
+                    
+                    // Store images data for selection
+                    resultsEl.querySelectorAll('.image-result').forEach((el, idx) => {
+                        el.querySelector('.select-image-btn').addEventListener('click', () => {
+                            const img = response.images[idx];
+                            if (!selectedImages.find(i => i.url === img.url)) {
+                                selectedImages.push(img);
+                                updateSelectedImages();
+                                el.classList.add('selected');
+                            }
+                        });
+                    });
+                } else {
+                    resultsEl.innerHTML = '<p class="no-results">No images found. Try a different search term.</p>';
+                }
+            } catch (error) {
+                resultsEl.innerHTML = '<p class="error-text">Failed to search images: ' + error.message + '</p>';
+            }
+        }
+        
+        async function generateAIImage() {
+            const query = windowEl.querySelector('#image-search-query').value.trim() || lessonData.topic;
+            if (!query) {
+                self.showNotification('Please enter a description for the image', 'warning');
+                return;
+            }
+            
+            const resultsEl = windowEl.querySelector('#image-results');
+            resultsEl.innerHTML = '<div class="loading-images"><div class="spinner"></div><p>Generating AI image... This may take a moment.</p></div>';
+            
+            try {
+                const response = await self.api('/lesson/generate-image', { method: 'POST', body: JSON.stringify({ prompt: query }) });
+                
+                resultsEl.innerHTML = '<div class="image-grid"><div class="image-result generated">' +
+                    '<img src="' + response.url + '" alt="' + query + '">' +
+                    '<div class="image-info"><p class="image-title">' + query.substring(0, 50) + '</p><span class="image-source">AI Generated</span></div>' +
+                    '<button class="select-image-btn">+ Add</button>' +
+                '</div></div>';
+                
+                resultsEl.querySelector('.select-image-btn').addEventListener('click', () => {
+                    if (!selectedImages.find(i => i.url === response.url)) {
+                        selectedImages.push(response);
+                        updateSelectedImages();
+                        resultsEl.querySelector('.image-result').classList.add('selected');
+                    }
+                });
+            } catch (error) {
+                resultsEl.innerHTML = '<p class="error-text">Failed to generate image: ' + error.message + '</p>';
+            }
+        }
+        
+        function updateSelectedImages() {
+            const listEl = windowEl.querySelector('#selected-images-list');
+            const countEl = windowEl.querySelector('#selected-count');
+            countEl.textContent = selectedImages.length;
+            
+            listEl.innerHTML = selectedImages.map((img, idx) => 
+                '<div class="selected-image-item">' +
+                    '<img src="' + img.url + '" alt="' + (img.title || 'Image') + '">' +
+                    '<span>' + (img.title || 'Image').substring(0, 30) + '</span>' +
+                    '<button class="remove-image-btn" data-idx="' + idx + '">×</button>' +
+                '</div>'
+            ).join('');
+            
+            listEl.querySelectorAll('.remove-image-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    selectedImages.splice(parseInt(btn.dataset.idx), 1);
+                    updateSelectedImages();
+                });
+            });
+        }
+        
         async function exportToPDF() {
-            goToStep(4);
+            goToStep(5);
             const includedSections = {};
             windowEl.querySelectorAll('.section-toggle input:checked').forEach(input => { includedSections[input.dataset.section] = true; });
             const includeImages = windowEl.querySelector('#include-images').checked;
@@ -6441,6 +6544,37 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 previewEl.innerHTML = '<iframe src="' + response.previewUrl + '" frameborder="0"></iframe>';
                 windowEl.querySelector('#download-pdf-btn').onclick = () => { window.open(response.downloadUrl, '_blank'); };
             } catch (error) { self.showNotification('Failed to generate PDF: ' + error.message, 'error'); }
+        }
+        
+        async function saveToFiles() {
+            const statusEl = windowEl.querySelector('#export-status');
+            statusEl.textContent = 'Saving lesson plan to your files...';
+            statusEl.className = 'export-note saving';
+            
+            const includedSections = {};
+            windowEl.querySelectorAll('.section-toggle input:checked').forEach(input => { includedSections[input.dataset.section] = true; });
+            const includeStandards = windowEl.querySelector('#include-standards').checked;
+            const includeBlended = windowEl.querySelector('#include-blended').checked;
+            
+            try {
+                const response = await self.api('/lesson/save-to-files', { 
+                    method: 'POST', 
+                    body: JSON.stringify({ 
+                        lessonPlan: generatedPlan, 
+                        includedSections, 
+                        options: { includeStandards, includeBlended },
+                        images: selectedImages
+                    }) 
+                });
+                
+                statusEl.textContent = '✅ ' + response.message + ' - Open in Files app to view!';
+                statusEl.className = 'export-note success';
+                self.showNotification('Lesson saved to ' + response.folder, 'success');
+            } catch (error) {
+                statusEl.textContent = '❌ Failed to save: ' + error.message;
+                statusEl.className = 'export-note error';
+                self.showNotification('Failed to save lesson: ' + error.message, 'error');
+            }
         }
         
         async function loadHistory() {
@@ -6467,6 +6601,19 @@ Start by introducing yourself warmly and asking their name if you don't know it 
         generateBtn.addEventListener('click', generateLessonPlan);
         windowEl.querySelector('#lesson-export-btn').addEventListener('click', exportToPDF);
         windowEl.querySelector('#lesson-regenerate').addEventListener('click', () => { goToStep(1); generateBtn.disabled = false; });
+        
+        // Image search bindings
+        windowEl.querySelector('#lesson-find-images').addEventListener('click', () => { 
+            goToStep(4);
+            windowEl.querySelector('#image-search-query').value = lessonData.topic || '';
+        });
+        windowEl.querySelector('#image-search-btn').addEventListener('click', searchImages);
+        windowEl.querySelector('#image-generate-btn').addEventListener('click', generateAIImage);
+        windowEl.querySelector('#image-search-query').addEventListener('keydown', (e) => { if (e.key === 'Enter') searchImages(); });
+        windowEl.querySelector('#image-back-btn').addEventListener('click', () => goToStep(3));
+        windowEl.querySelector('#image-continue-btn').addEventListener('click', () => goToStep(5));
+        windowEl.querySelector('#save-to-files-btn').addEventListener('click', saveToFiles);
+        
         loadTeacherContext();
         loadHistory();
     }

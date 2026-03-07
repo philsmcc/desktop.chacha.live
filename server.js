@@ -2383,6 +2383,470 @@ function generateLessonPDF(plan, includedSections, options) {
     `;
 }
 
+// ==================== LESSON IMAGE SERVICES ====================
+
+// Search Wikipedia for educational images
+app.post('/api/lesson/search-images', authenticateToken, async (req, res) => {
+    try {
+        const { query, count = 4 } = req.body;
+        
+        // Search Wikipedia for images related to the topic
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages|images&piprop=thumbnail&pithumbsize=400&titles=${encodeURIComponent(query)}&imlimit=10`;
+        
+        const response = await fetch(searchUrl);
+        const data = await response.json();
+        
+        const images = [];
+        const pages = data.query?.pages || {};
+        
+        for (const pageId of Object.keys(pages)) {
+            const page = pages[pageId];
+            
+            // Get thumbnail if available
+            if (page.thumbnail) {
+                images.push({
+                    url: page.thumbnail.source,
+                    title: page.title,
+                    source: 'Wikipedia',
+                    width: page.thumbnail.width,
+                    height: page.thumbnail.height
+                });
+            }
+            
+            // Get additional images from the page
+            if (page.images) {
+                for (const img of page.images.slice(0, count)) {
+                    if (img.title && !img.title.includes('Icon') && !img.title.includes('Logo')) {
+                        // Get image info
+                        const imgInfoUrl = `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=url|size&titles=${encodeURIComponent(img.title)}`;
+                        try {
+                            const imgResponse = await fetch(imgInfoUrl);
+                            const imgData = await imgResponse.json();
+                            const imgPages = imgData.query?.pages || {};
+                            for (const imgPageId of Object.keys(imgPages)) {
+                                const imgInfo = imgPages[imgPageId]?.imageinfo?.[0];
+                                if (imgInfo && imgInfo.url && !imgInfo.url.includes('.svg')) {
+                                    images.push({
+                                        url: imgInfo.url,
+                                        title: img.title.replace('File:', ''),
+                                        source: 'Wikipedia',
+                                        width: imgInfo.width,
+                                        height: imgInfo.height
+                                    });
+                                }
+                            }
+                        } catch (e) {
+                            console.log('Error fetching image info:', e.message);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Also search Wikimedia Commons for more images
+        const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=6&srlimit=${count}`;
+        try {
+            const commonsResponse = await fetch(commonsUrl);
+            const commonsData = await commonsResponse.json();
+            
+            for (const result of (commonsData.query?.search || []).slice(0, count)) {
+                const imgInfoUrl = `https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=url|size&titles=${encodeURIComponent(result.title)}`;
+                const imgResponse = await fetch(imgInfoUrl);
+                const imgData = await imgResponse.json();
+                const imgPages = imgData.query?.pages || {};
+                
+                for (const imgPageId of Object.keys(imgPages)) {
+                    const imgInfo = imgPages[imgPageId]?.imageinfo?.[0];
+                    if (imgInfo && imgInfo.url && !imgInfo.url.includes('.svg')) {
+                        images.push({
+                            url: imgInfo.url,
+                            title: result.title.replace('File:', ''),
+                            source: 'Wikimedia Commons',
+                            width: imgInfo.width,
+                            height: imgInfo.height
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            console.log('Error searching Commons:', e.message);
+        }
+        
+        // Return unique images
+        const uniqueImages = images.filter((img, idx, arr) => 
+            arr.findIndex(i => i.url === img.url) === idx
+        ).slice(0, count * 2);
+        
+        res.json({ images: uniqueImages });
+    } catch (error) {
+        console.error('Image search error:', error);
+        res.status(500).json({ error: 'Failed to search images', images: [] });
+    }
+});
+
+// Generate AI images for lesson content using Bedrock Titan Image Generator
+app.post('/api/lesson/generate-image', authenticateToken, async (req, res) => {
+    try {
+        const { prompt, style = 'educational' } = req.body;
+        
+        // Enhance prompt for educational context
+        const enhancedPrompt = `Educational illustration for classroom use: ${prompt}. Style: clean, colorful, age-appropriate, detailed diagram suitable for students. No text or labels in image.`;
+        
+        // Use Amazon Titan Image Generator
+        const command = new InvokeModelCommand({
+            modelId: 'amazon.titan-image-generator-v1',
+            contentType: 'application/json',
+            accept: 'application/json',
+            body: JSON.stringify({
+                taskType: 'TEXT_IMAGE',
+                textToImageParams: {
+                    text: enhancedPrompt
+                },
+                imageGenerationConfig: {
+                    numberOfImages: 1,
+                    height: 512,
+                    width: 512,
+                    cfgScale: 8.0
+                }
+            })
+        });
+        
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        
+        if (responseBody.images && responseBody.images.length > 0) {
+            // Image is returned as base64
+            const imageBase64 = responseBody.images[0];
+            
+            // Save to S3 and return URL
+            const prefix = getUserPrefix(req.user.email);
+            const imageKey = `${prefix}/lesson-images/${Date.now()}_${prompt.slice(0, 30).replace(/[^a-z0-9]/gi, '_')}.png`;
+            
+            await s3Client.send(new PutObjectCommand({
+                Bucket: BUCKET,
+                Key: imageKey,
+                Body: Buffer.from(imageBase64, 'base64'),
+                ContentType: 'image/png'
+            }));
+            
+            const getCmd = new GetObjectCommand({ Bucket: BUCKET, Key: imageKey });
+            const imageUrl = await getSignedUrl(s3Client, getCmd, { expiresIn: 86400 });
+            
+            res.json({ 
+                url: imageUrl,
+                title: prompt,
+                source: 'AI Generated',
+                generated: true
+            });
+        } else {
+            throw new Error('No image generated');
+        }
+    } catch (error) {
+        console.error('Image generation error:', error);
+        res.status(500).json({ error: 'Failed to generate image: ' + error.message });
+    }
+});
+
+// Save lesson plan with images to teacher's files
+app.post('/api/lesson/save-to-files', authenticateToken, async (req, res) => {
+    try {
+        const { lessonPlan, includedSections, options, images = [] } = req.body;
+        
+        const prefix = getUserPrefix(req.user.email);
+        const safeTitle = (lessonPlan.title || 'Lesson_Plan').replace(/[^a-z0-9\s]/gi, '').replace(/\s+/g, '_');
+        const timestamp = new Date().toISOString().split('T')[0];
+        const folderName = `${safeTitle}_${timestamp}`;
+        const lessonFolder = `${prefix}/files/Documents/Lessons/${folderName}`;
+        
+        // Create the lesson folder
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: `${lessonFolder}/.keep`,
+            Body: '',
+            ContentType: 'text/plain'
+        }));
+        
+        // Download and save images to the folder
+        const savedImages = [];
+        for (let i = 0; i < images.length; i++) {
+            const img = images[i];
+            try {
+                // Fetch the image
+                const imgResponse = await fetch(img.url);
+                if (!imgResponse.ok) continue;
+                
+                const imgBuffer = await imgResponse.arrayBuffer();
+                const ext = img.url.includes('.png') ? 'png' : img.url.includes('.gif') ? 'gif' : 'jpg';
+                const imgFileName = `image_${i + 1}_${img.title?.slice(0, 30).replace(/[^a-z0-9]/gi, '_') || 'img'}.${ext}`;
+                const imgKey = `${lessonFolder}/${imgFileName}`;
+                
+                await s3Client.send(new PutObjectCommand({
+                    Bucket: BUCKET,
+                    Key: imgKey,
+                    Body: Buffer.from(imgBuffer),
+                    ContentType: `image/${ext}`
+                }));
+                
+                savedImages.push({
+                    fileName: imgFileName,
+                    title: img.title,
+                    source: img.source
+                });
+            } catch (e) {
+                console.log('Error saving image:', e.message);
+            }
+        }
+        
+        // Generate HTML with embedded image references
+        const html = generateLessonHTML(lessonPlan, includedSections, options, savedImages);
+        
+        // Save the HTML file
+        const htmlKey = `${lessonFolder}/lesson_plan.html`;
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: htmlKey,
+            Body: html,
+            ContentType: 'text/html'
+        }));
+        
+        // Create a metadata JSON file
+        const metadata = {
+            title: lessonPlan.title,
+            subject: lessonPlan.subject || options?.subject,
+            grade: lessonPlan.grade || options?.grade,
+            topic: lessonPlan.topic || options?.topic,
+            createdAt: new Date().toISOString(),
+            images: savedImages.length,
+            folder: `Documents/Lessons/${folderName}`
+        };
+        
+        await s3Client.send(new PutObjectCommand({
+            Bucket: BUCKET,
+            Key: `${lessonFolder}/metadata.json`,
+            Body: JSON.stringify(metadata, null, 2),
+            ContentType: 'application/json'
+        }));
+        
+        res.json({
+            success: true,
+            folder: `Documents/Lessons/${folderName}`,
+            htmlFile: 'lesson_plan.html',
+            imageCount: savedImages.length,
+            message: `Lesson saved to Documents/Lessons/${folderName}`
+        });
+    } catch (error) {
+        console.error('Save to files error:', error);
+        res.status(500).json({ error: 'Failed to save lesson: ' + error.message });
+    }
+});
+
+// Helper function to generate lesson HTML with local image references
+function generateLessonHTML(plan, includedSections, options, images = []) {
+    const sections = [];
+    
+    const camelToTitle = (str) => {
+        return str.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+    };
+    
+    const addSection = (key, title, content) => {
+        if (!includedSections || includedSections[key]) {
+            sections.push(`
+                <div class="section">
+                    <h2>${title}</h2>
+                    <div class="section-content">${formatContent(content)}</div>
+                </div>
+            `);
+        }
+    };
+    
+    const formatContent = (content) => {
+        if (Array.isArray(content)) {
+            return '<ul>' + content.map(item => `<li>${item}</li>`).join('') + '</ul>';
+        }
+        if (typeof content === 'object' && content !== null) {
+            return Object.entries(content).map(([key, value]) => 
+                `<p><strong>${camelToTitle(key)}:</strong> ${Array.isArray(value) ? value.join(', ') : value}</p>`
+            ).join('');
+        }
+        return `<p>${content}</p>`;
+    };
+    
+    // Add main sections
+    addSection('overview', '📋 Overview', plan.overview);
+    addSection('objectives', '🎯 Learning Objectives', plan.objectives);
+    addSection('materials', '📦 Materials Needed', plan.materials);
+    addSection('introduction', '👋 Introduction/Hook', plan.introduction);
+    addSection('directInstruction', '📖 Direct Instruction', plan.directInstruction);
+    addSection('guidedPractice', '🤝 Guided Practice', plan.guidedPractice);
+    addSection('independentPractice', '✍️ Independent Practice', plan.independentPractice);
+    addSection('discussion', '💬 Discussion Topics', plan.discussion);
+    addSection('funFacts', '🌟 Fun Facts', plan.funFacts);
+    addSection('assessment', '📊 Assessment', plan.assessment);
+    addSection('closure', '🏁 Closure', plan.closure);
+    
+    if (options?.includeBlended) {
+        addSection('blendedLearning', '🔀 Blended Learning Opportunities', plan.blendedLearning);
+    }
+    addSection('differentiation', '🎭 Differentiation Strategies', plan.differentiation);
+    
+    if (options?.includeStandards) {
+        addSection('standards', '📜 Standards Alignment', plan.standards);
+    }
+    
+    // Build image gallery section
+    let imageGallery = '';
+    if (images.length > 0) {
+        imageGallery = `
+            <div class="section">
+                <h2>🖼️ Visual Resources</h2>
+                <div class="image-gallery">
+                    ${images.map(img => `
+                        <div class="image-card">
+                            <img src="${img.fileName}" alt="${img.title}" loading="lazy">
+                            <p class="image-caption">${img.title}</p>
+                            <span class="image-source">Source: ${img.source}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+    
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${plan.title || 'Lesson Plan'}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Georgia', 'Times New Roman', serif; 
+            max-width: 900px; 
+            margin: 0 auto; 
+            padding: 40px 20px; 
+            line-height: 1.7;
+            background: #fafafa;
+            color: #333;
+        }
+        h1 { 
+            color: #2c3e50; 
+            border-bottom: 3px solid #3498db; 
+            padding-bottom: 15px;
+            font-size: 2em;
+        }
+        h2 { 
+            color: #2980b9; 
+            margin-top: 35px; 
+            border-left: 5px solid #3498db; 
+            padding-left: 15px;
+            font-size: 1.4em;
+        }
+        .header-info { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px; 
+            border-radius: 12px; 
+            margin-bottom: 30px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        .header-info p { margin: 8px 0; }
+        .section { 
+            margin-bottom: 30px; 
+            page-break-inside: avoid;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .section-content { 
+            background: #f8f9fa; 
+            padding: 15px 20px; 
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        ul { margin: 10px 0; padding-left: 25px; }
+        li { margin-bottom: 10px; }
+        strong { color: #34495e; }
+        
+        /* Image gallery styles */
+        .image-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+        .image-card {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .image-card:hover {
+            transform: translateY(-3px);
+        }
+        .image-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+        .image-caption {
+            padding: 12px 15px 5px;
+            margin: 0;
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 0.95em;
+        }
+        .image-source {
+            display: block;
+            padding: 0 15px 12px;
+            font-size: 0.8em;
+            color: #7f8c8d;
+        }
+        
+        footer {
+            margin-top: 50px;
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 12px;
+            padding: 20px;
+            border-top: 1px solid #eee;
+        }
+        
+        @media print {
+            body { padding: 20px; background: white; }
+            .section { box-shadow: none; border: 1px solid #eee; }
+            .image-card { break-inside: avoid; }
+        }
+        
+        @media (max-width: 600px) {
+            body { padding: 15px; }
+            .image-gallery { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <h1>${plan.title || 'Lesson Plan'}</h1>
+    <div class="header-info">
+        <p><strong>📚 Subject:</strong> ${plan.subject || 'General'}</p>
+        <p><strong>🎓 Grade Level:</strong> ${plan.grade || 'All grades'}</p>
+        <p><strong>⏱️ Duration:</strong> ${plan.duration || '45-50 minutes'}</p>
+        <p><strong>📅 Created:</strong> ${new Date().toLocaleDateString()}</p>
+    </div>
+    
+    ${sections.join('')}
+    ${imageGallery}
+    
+    <footer>
+        <p>Generated with HoverCam Desktop - AI-Powered Lesson Planning</p>
+        <p>© ${new Date().getFullYear()} HoverCam</p>
+    </footer>
+</body>
+</html>`;
+}
+
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
