@@ -1326,6 +1326,7 @@ class DesktopOS {
         
         // Profile save handler
         const saveProfileBtn = windowEl.querySelector('#save-profile-btn');
+        const self = this;
         if (saveProfileBtn) {
             saveProfileBtn.addEventListener('click', async () => {
                 const nameInput = windowEl.querySelector('#profile-name');
@@ -1338,21 +1339,21 @@ class DesktopOS {
                 saveProfileBtn.textContent = 'Saving...';
                 
                 try {
-                    await this.api('/profile', {
+                    await self.api('/profile', {
                         method: 'PUT',
                         body: JSON.stringify({ displayName, title })
                     });
                     
                     // Update local user data (in-memory only, DB is source of truth)
-                    if (this.currentUser) {
-                        this.currentUser.displayName = displayName;
-                        this.currentUser.title = title;
+                    if (self.currentUser) {
+                        self.currentUser.displayName = displayName;
+                        self.currentUser.title = title;
                     }
                     
                     // Update UI
                     const userInfo = windowEl.querySelector('.user-info');
                     if (userInfo) {
-                        userInfo.querySelector('.user-name').textContent = displayName || this.currentUser?.username || 'User';
+                        userInfo.querySelector('.user-name').textContent = displayName || self.currentUser?.username || 'User';
                         userInfo.querySelector('.user-role').textContent = title || 'User';
                     }
                     
@@ -1365,10 +1366,10 @@ class DesktopOS {
                     // Update topbar
                     const currentUserEl = document.getElementById('current-user');
                     if (currentUserEl) {
-                        currentUserEl.textContent = displayName || this.currentUser?.username || 'User';
+                        currentUserEl.textContent = displayName || self.currentUser?.username || 'User';
                     }
                     
-                    this.showNotification('Profile saved successfully', 'success');
+                    self.showNotification('Profile saved successfully', 'success');
                     saveProfileBtn.textContent = 'Saved!';
                     setTimeout(() => {
                         saveProfileBtn.textContent = 'Save Profile';
@@ -1376,7 +1377,7 @@ class DesktopOS {
                     }, 2000);
                 } catch (error) {
                     console.error('Failed to save profile:', error);
-                    this.showNotification('Failed to save profile', 'error');
+                    self.showNotification('Failed to save profile', 'error');
                     saveProfileBtn.textContent = 'Save Profile';
                     saveProfileBtn.disabled = false;
                 }
