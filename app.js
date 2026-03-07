@@ -5803,13 +5803,17 @@ class DesktopOS {
                 '</div>' +
                 '<div class="ai-settings-section">' +
                     '<h3>System Prompt</h3>' +
-                    '<span class="setting-hint">Define ChaCha\'s personality and behavior</span>' +
-                    '<textarea id="ai-system-prompt" rows="12" placeholder="You are ChaCha, a friendly AI assistant..."></textarea>' +
+                    '<div class="setting-group full-width">' +
+                        '<span class="setting-hint">Define ChaCha\'s personality and behavior</span>' +
+                        '<textarea id="ai-system-prompt" rows="12" placeholder="You are ChaCha, a friendly AI assistant..."></textarea>' +
+                    '</div>' +
                 '</div>' +
                 '<div class="ai-settings-section">' +
                     '<h3>Product Information</h3>' +
-                    '<span class="setting-hint">HoverCam product details for tech support</span>' +
-                    '<textarea id="ai-product-info" rows="12" placeholder="HoverCam Product Information..."></textarea>' +
+                    '<div class="setting-group full-width">' +
+                        '<span class="setting-hint">HoverCam product details for tech support</span>' +
+                        '<textarea id="ai-product-info" rows="12" placeholder="HoverCam Product Information..."></textarea>' +
+                    '</div>' +
                 '</div>' +
                 '<div class="ai-settings-actions">' +
                     '<button id="ai-settings-save" class="admin-btn save">💾 Save Settings</button>' +
