@@ -796,7 +796,7 @@ class DesktopOS {
                     if (fileData.source !== 'desktop') {
                         // Check if file is from shared folder (key starts with 'shared/')
                         const isFromShared = fileData.key.startsWith('shared/');
-                        const endpoint = isFromShared ? '/shared/move-to-user' : '/files/move';
+                        const endpoint = isFromShared ? '/shared/copy-to-user' : '/files/move';
                         
                         const response = await self.api(endpoint, {
                             method: 'POST',
@@ -816,7 +816,7 @@ class DesktopOS {
                             filesWindow.dispatchEvent(refreshEvent);
                         }
                         
-                        self.showNotification('Moved to Desktop: ' + fileData.name, 'success');
+                        self.showNotification('Copied to Desktop: ' + fileData.name, 'success');
                     }
                 } catch (err) {
                     console.error('Failed to move file to desktop:', err);

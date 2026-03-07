@@ -732,7 +732,8 @@ app.post('/api/shared/move', authenticateToken, async (req, res) => {
 });
 
 // Move file from shared folder to user's folder
-app.post('/api/shared/move-to-user', authenticateToken, async (req, res) => {
+// Copy file from shared folder to user's folder (keeps original in shared)
+app.post('/api/shared/copy-to-user', authenticateToken, async (req, res) => {
     try {
         const orgDomain = getOrgDomain(req.user.email);
         
@@ -756,23 +757,17 @@ app.post('/api/shared/move-to-user', authenticateToken, async (req, res) => {
         const fileName = sourceKey.split('/').pop();
         const destKey = `${userPrefix}/files/${destinationFolder}/${fileName}`.replace(/\/+/g, '/');
         
-        // Copy file to user's folder
+        // Copy file to user's folder (keep original in shared folder)
         await s3Client.send(new CopyObjectCommand({
             Bucket: BUCKET,
             CopySource: `${BUCKET}/${sourceKey}`,
             Key: destKey
         }));
         
-        // Delete original from shared folder
-        await s3Client.send(new DeleteObjectCommand({
-            Bucket: BUCKET,
-            Key: sourceKey
-        }));
-        
-        res.json({ message: 'File moved from shared folder', key: destKey });
+        res.json({ message: 'File copied from shared folder', key: destKey });
     } catch (error) {
-        console.error('Shared move-to-user error:', error);
-        res.status(500).json({ error: 'Failed to move file from shared folder' });
+        console.error('Shared copy-to-user error:', error);
+        res.status(500).json({ error: 'Failed to copy file from shared folder' });
     }
 });
 
