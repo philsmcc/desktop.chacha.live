@@ -2659,10 +2659,16 @@ app.post('/api/lesson/save-to-files', authenticateToken, async (req, res) => {
             ContentType: 'application/json'
         }));
         
+        // Generate signed URL for the HTML file so it can be opened in browser
+        const getHtmlCmd = new GetObjectCommand({ Bucket: BUCKET, Key: htmlKey });
+        const htmlUrl = await getSignedUrl(s3Client, getHtmlCmd, { expiresIn: 86400 });
+        
         res.json({
             success: true,
             folder: `Documents/Lessons/${folderName}`,
             htmlFile: 'lesson_plan.html',
+            htmlPath: `files/Documents/Lessons/${folderName}/lesson_plan.html`,
+            htmlUrl: htmlUrl,
             imageCount: savedImages.length,
             message: `Lesson saved to Documents/Lessons/${folderName}`
         });

@@ -1318,7 +1318,53 @@ class DesktopOS {
         this.bindWindowEvents(windowEl, windowId);
     }
 
-    makeIconDraggable(icon, customId = null) {
+    openBrowserWithUrl(url) {
+        // Check if browser window already exists
+        if (this.windows.has('browser')) {
+            const win = this.windows.get('browser');
+            win.element.classList.remove('minimized');
+            win.element.style.zIndex = ++this.windowZIndex;
+            win.minimized = false;
+            // Navigate to the URL in the existing browser
+            const iframe = win.element.querySelector('iframe');
+            const urlInput = win.element.querySelector('.browser-url-input');
+            const homepageContainer = win.element.querySelector('.browser-homepage');
+            if (iframe) {
+                iframe.classList.remove('hidden');
+                iframe.src = url;
+            }
+            if (homepageContainer) {
+                homepageContainer.classList.add('hidden');
+            }
+            if (urlInput) {
+                urlInput.value = url;
+            }
+        } else {
+            // Open browser app first
+            this.openApp('browser');
+            // Wait a bit for the browser to initialize, then navigate
+            setTimeout(() => {
+                if (this.windows.has('browser')) {
+                    const win = this.windows.get('browser');
+                    const iframe = win.element.querySelector('iframe');
+                    const urlInput = win.element.querySelector('.browser-url-input');
+                    const homepageContainer = win.element.querySelector('.browser-homepage');
+                    if (iframe) {
+                        iframe.classList.remove('hidden');
+                        iframe.src = url;
+                    }
+                    if (homepageContainer) {
+                        homepageContainer.classList.add('hidden');
+                    }
+                    if (urlInput) {
+                        urlInput.value = url;
+                    }
+                }
+            }, 300);
+        }
+    }
+
+        makeIconDraggable(icon, customId = null) {
         let isDragging = false;
         let hasMoved = false;
         let startX, startY, startLeft, startTop;
@@ -6454,7 +6500,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 if (response.images && response.images.length > 0) {
                     resultsEl.innerHTML = '<div class="image-grid">' + response.images.map((img, idx) => 
                         '<div class="image-result" data-idx="' + idx + '">' +
-                            '<img src="' + (img.proxyUrl || img.url) + '" alt="' + (img.title || 'Image') + '" loading="lazy">' +
+                            '<img src="' + img.url + '" alt="' + (img.title || 'Image') + '" loading="lazy" onerror="this.parentElement.style.display='none'">' +
                             '<div class="image-info"><p class="image-title">' + (img.title || 'Untitled').substring(0, 50) + '</p><span class="image-source">' + img.source + '</span></div>' +
                             '<button class="select-image-btn">+ Add</button>' +
                         '</div>'
@@ -6517,7 +6563,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
             
             listEl.innerHTML = selectedImages.map((img, idx) => 
                 '<div class="selected-image-item">' +
-                    '<img src="' + (img.proxyUrl || img.url) + '" alt="' + (img.title || 'Image') + '">' +
+                    '<img src="' + img.url + '" alt="' + (img.title || 'Image') + '">' +
                     '<span>' + (img.title || 'Image').substring(0, 30) + '</span>' +
                     '<button class="remove-image-btn" data-idx="' + idx + '">×</button>' +
                 '</div>'
@@ -6567,9 +6613,16 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                     }) 
                 });
                 
-                statusEl.textContent = '✅ ' + response.message + ' - Open in Files app to view!';
+                statusEl.innerHTML = '✅ ' + response.message + '<br><button id="open-in-browser-btn" class="open-browser-btn">🌐 Open in Browser</button>';
                 statusEl.className = 'export-note success';
                 self.showNotification('Lesson saved to ' + response.folder, 'success');
+                
+                const openBtn = statusEl.querySelector('#open-in-browser-btn');
+                if (openBtn && response.htmlUrl) {
+                    openBtn.addEventListener('click', () => {
+                        self.openBrowserWithUrl(response.htmlUrl);
+                    });
+                }
             } catch (error) {
                 statusEl.textContent = '❌ Failed to save: ' + error.message;
                 statusEl.className = 'export-note error';

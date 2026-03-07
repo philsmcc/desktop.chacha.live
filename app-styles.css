@@ -5131,3 +5131,53 @@ button.search-btn.ai {
     color: var(--text-secondary);
     font-size: 13px;
 }
+
+/* Open in Browser button */
+.open-browser-btn {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.open-browser-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+}
+
+/* Image loading error fallback */
+.image-result img {
+    min-height: 120px;
+    background: var(--bg-darker);
+    display: block;
+}
+
+.image-result img[src=""],
+.image-result img:not([src]) {
+    display: none;
+}
+
+/* Fix for export note with button */
+.export-note.success {
+    background: rgba(39, 174, 96, 0.1);
+    border: 1px solid rgba(39, 174, 96, 0.3);
+    color: var(--text-primary);
+}
+
+.export-note.saving {
+    background: rgba(52, 152, 219, 0.1);
+    border: 1px solid rgba(52, 152, 219, 0.3);
+}
+
+.export-note.error {
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.3);
+    color: #e74c3c;
+}
