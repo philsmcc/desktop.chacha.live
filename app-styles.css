@@ -19,11 +19,19 @@
     transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
     text-decoration: none;
     user-select: none;
-    width: 90px;
+    width: 100px;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
 }
 
 .desktop-icon:hover {
     background: var(--icon-hover-bg);
+}
+
+.desktop-icon:active {
+    background: rgba(245, 124, 0, 0.15);
+    transform: scale(0.98);
 }
 
 .desktop-icon.selected {
@@ -40,13 +48,13 @@
 }
 
 .desktop-icon-img {
-    width: 48px;
-    height: 48px;
+    width: 56px;
+    height: 56px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--bg-card);
-    border-radius: 12px;
+    border-radius: 14px;
     border: 1px solid var(--border-color);
     transition: background 0.3s ease, border-color 0.3s ease, transform 0.2s;
 }
@@ -63,19 +71,22 @@
 }
 
 .desktop-icon-img svg {
-    width: 26px;
-    height: 26px;
+    width: 30px;
+    height: 30px;
     stroke: var(--primary-color);
 }
 
 .desktop-icon-label {
-    font-size: 12px;
+    font-size: 11px;
+    line-height: 1.3;
     color: var(--text-primary);
     text-align: center;
-    max-width: 80px;
+    max-width: 94px;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
 }
 
 /* Light mode: remove text shadow on desktop icons */
@@ -5284,4 +5295,96 @@ button.search-btn.ai {
     margin-top: 8px !important;
     padding: 8px 12px !important;
     font-size: 12px !important;
+}
+
+/* ==================== TOUCH-FRIENDLY ENHANCEMENTS ==================== */
+
+/* Window header touch-friendly */
+.window-header {
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Larger touch targets for window controls */
+.window-control {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 6px;
+    touch-action: manipulation;
+}
+
+/* Taskbar touch-friendly */
+.taskbar-icon {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+}
+
+/* Files grid items touch-friendly */
+.file-item, .folder-item {
+    min-height: 44px;
+    touch-action: manipulation;
+}
+
+/* Buttons touch-friendly */
+button, .btn, .action-btn, .download-btn, .search-btn {
+    min-height: 36px;
+    touch-action: manipulation;
+}
+
+/* Touch feedback for interactive elements */
+@media (pointer: coarse) {
+    .desktop-icon {
+        padding: 14px;
+    }
+    
+    .desktop-icon-img {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .desktop-icon-img svg {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .window-control {
+        min-width: 40px;
+        min-height: 40px;
+    }
+    
+    .taskbar-icon {
+        min-width: 50px;
+        min-height: 50px;
+    }
+    
+    /* Larger checkboxes on touch */
+    input[type="checkbox"] {
+        min-width: 20px;
+        min-height: 20px;
+    }
+    
+    /* Larger scrollbars on touch */
+    ::-webkit-scrollbar {
+        width: 12px;
+        height: 12px;
+    }
+}
+
+/* Prevent text selection during drag on touch */
+.dragging, .dragging * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+}
+
+/* Smooth touch scrolling */
+.window-content,
+.chat-messages,
+.lesson-sections,
+.image-results,
+.files-grid {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
 }
