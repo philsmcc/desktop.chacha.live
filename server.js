@@ -1567,6 +1567,40 @@ app.put('/api/admin/ai-settings', authenticateToken, requireAdmin, async (req, r
     }
 });
 
+// Get welcome page HTML (any authenticated user can read)
+app.get('/api/admin/welcome-page', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT setting_value FROM ai_settings WHERE setting_key = 'welcome_html'"
+        );
+        const html = result.rows[0]?.setting_value || '';
+        res.json({ html });
+    } catch (error) {
+        console.error('Get welcome page error:', error);
+        res.status(500).json({ error: 'Failed to get welcome page' });
+    }
+});
+
+// Update welcome page HTML (admin only)
+app.put('/api/admin/welcome-page', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { html } = req.body;
+        
+        // Upsert the welcome HTML
+        await pool.query(`
+            INSERT INTO ai_settings (setting_key, setting_value)
+            VALUES ('welcome_html', $1)
+            ON CONFLICT (setting_key) 
+            DO UPDATE SET setting_value = $1
+        `, [html || '']);
+        
+        res.json({ message: 'Welcome page updated' });
+    } catch (error) {
+        console.error('Update welcome page error:', error);
+        res.status(500).json({ error: 'Failed to update welcome page' });
+    }
+});
+
 // Helper to get user context from S3
 async function getUserContext(userEmail) {
     const prefix = getUserPrefix(userEmail);

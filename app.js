@@ -112,6 +112,14 @@ class DesktopOS {
                 defaultSize: { width: 900, height: 700 },
                 content: () => this.renderAISettingsApp(),
                 adminOnly: true
+            },
+            {
+                id: "welcomeeditor",
+                name: "Welcome Editor",
+                icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+                defaultSize: { width: 900, height: 600 },
+                content: () => this.renderWelcomeEditorApp(),
+                adminOnly: true
             }
         ];
         
@@ -1148,7 +1156,7 @@ class DesktopOS {
         const container = document.getElementById("windows-container");
         
         const offset = this.windows.size * 30;
-        const left = 100 + offset;
+        const left = (appId === 'welcome' ? 250 : 100) + offset;
         const top = 50 + offset;
 
         const windowEl = document.createElement("div");
@@ -1530,6 +1538,10 @@ class DesktopOS {
         
         if (appId === "aisettings") {
             setTimeout(() => this.initAISettings(windowEl), 50);
+        }
+        
+        if (appId === "welcomeeditor") {
+            setTimeout(() => this.initWelcomeEditor(windowEl), 50);
         }
         
         if (appId === "lessonplanner") {
@@ -3269,13 +3281,63 @@ class DesktopOS {
     }
 
     renderWelcomeApp() {
-        return '<div class="welcome-content">' +
-            '<h2>Welcome to HoverCam Desktop</h2>' +
+        // Return a container that will be populated with custom or default content
+        setTimeout(() => this.loadWelcomeContent(), 100);
+        return '<div class="welcome-content" id="welcome-content-container">' +
+            '<div class="welcome-loading">Loading...</div>' +
+        '</div>';
+    }
+    
+    async loadWelcomeContent() {
+        const container = document.getElementById('welcome-content-container');
+        if (!container) return;
+        
+        try {
+            const response = await this.api('/admin/welcome-page');
+            if (response.html && response.html.trim()) {
+                container.innerHTML = response.html;
+            } else {
+                container.innerHTML = this.getDefaultWelcomeHTML();
+            }
+        } catch (error) {
+            container.innerHTML = this.getDefaultWelcomeHTML();
+        }
+    }
+    
+    getDefaultWelcomeHTML() {
+        return '<h2>Welcome to HoverCam Desktop</h2>' +
             '<p>Your personal workspace is ready. Explore the apps in the taskbar or double-click desktop icons to get started.</p>' +
             '<div class="welcome-stats">' +
                 '<div class="stat-card"><h3>' + this.apps.length + '</h3><p>Apps Available</p></div>' +
                 '<div class="stat-card"><h3>v2.0</h3><p>System Version</p></div>' +
                 '<div class="stat-card"><h3>100%</h3><p>System Health</p></div>' +
+            '</div>';
+    }
+    
+    renderWelcomeEditorApp() {
+        return '<div class="welcome-editor-app">' +
+            '<div class="welcome-editor-header">' +
+                '<h2>📝 Welcome Page Editor</h2>' +
+                '<p>Edit the HTML that appears in the Welcome window for all users</p>' +
+            '</div>' +
+            '<div class="welcome-editor-content">' +
+                '<div class="welcome-editor-toolbar">' +
+                    '<button class="admin-btn" id="welcome-load-btn">🔄 Load Current</button>' +
+                    '<button class="admin-btn" id="welcome-preview-btn">👁️ Preview</button>' +
+                    '<button class="admin-btn" id="welcome-reset-btn">↩️ Reset to Default</button>' +
+                    '<button class="admin-btn save" id="welcome-save-btn">💾 Save Changes</button>' +
+                '</div>' +
+                '<div class="welcome-editor-main">' +
+                    '<div class="welcome-editor-code">' +
+                        '<h4>HTML Code</h4>' +
+                        '<textarea id="welcome-html-editor" placeholder="Enter your custom HTML here..."></textarea>' +
+                    '</div>' +
+                    '<div class="welcome-editor-preview">' +
+                        '<h4>Preview</h4>' +
+                        '<div class="welcome-preview-frame" id="welcome-preview-frame"></div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="welcome-editor-status" id="welcome-editor-status"></div>' +
             '</div>' +
         '</div>';
     }
@@ -5968,7 +6030,108 @@ Start by introducing yourself warmly and asking their name if you don't know it 
     }
 
 
-    renderUserManagerApp() {
+    initWelcomeEditor(windowEl) {
+        const self = this;
+        
+        const editor = windowEl.querySelector('#welcome-html-editor');
+        const preview = windowEl.querySelector('#welcome-preview-frame');
+        const status = windowEl.querySelector('#welcome-editor-status');
+        const loadBtn = windowEl.querySelector('#welcome-load-btn');
+        const previewBtn = windowEl.querySelector('#welcome-preview-btn');
+        const resetBtn = windowEl.querySelector('#welcome-reset-btn');
+        const saveBtn = windowEl.querySelector('#welcome-save-btn');
+        
+        // Load current welcome HTML
+        async function loadWelcomeHTML() {
+            status.textContent = 'Loading...';
+            status.className = 'welcome-editor-status loading';
+            try {
+                const response = await self.api('/admin/welcome-page');
+                editor.value = response.html || '';
+                updatePreview();
+                status.textContent = 'Loaded successfully';
+                status.className = 'welcome-editor-status success';
+            } catch (error) {
+                status.textContent = 'Failed to load: ' + error.message;
+                status.className = 'welcome-editor-status error';
+            }
+        }
+        
+        // Update preview
+        function updatePreview() {
+            preview.innerHTML = editor.value || '<p style="color: #888;">Preview will appear here...</p>';
+        }
+        
+        // Get default HTML
+        function getDefaultHTML() {
+            return `<h2>Welcome to HoverCam Desktop</h2>
+<p>Your personal workspace is ready. Explore the apps in the taskbar or double-click desktop icons to get started.</p>
+<div class="welcome-stats">
+    <div class="stat-card">
+        <h3>8</h3>
+        <p>Apps Available</p>
+    </div>
+    <div class="stat-card">
+        <h3>v2.0</h3>
+        <p>System Version</p>
+    </div>
+    <div class="stat-card">
+        <h3>100%</h3>
+        <p>System Health</p>
+    </div>
+</div>`;
+        }
+        
+        // Event listeners
+        loadBtn.addEventListener('click', loadWelcomeHTML);
+        
+        previewBtn.addEventListener('click', updatePreview);
+        
+        resetBtn.addEventListener('click', () => {
+            if (confirm('Reset to default welcome page? Your custom HTML will be cleared.')) {
+                editor.value = getDefaultHTML();
+                updatePreview();
+                status.textContent = 'Reset to default - click Save to apply';
+                status.className = 'welcome-editor-status';
+            }
+        });
+        
+        saveBtn.addEventListener('click', async () => {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+            status.textContent = 'Saving...';
+            status.className = 'welcome-editor-status loading';
+            
+            try {
+                await self.api('/admin/welcome-page', {
+                    method: 'PUT',
+                    body: JSON.stringify({ html: editor.value })
+                });
+                status.textContent = 'Saved successfully! Users will see the new welcome page.';
+                status.className = 'welcome-editor-status success';
+                self.showNotification('Welcome page saved!', 'success');
+            } catch (error) {
+                status.textContent = 'Failed to save: ' + error.message;
+                status.className = 'welcome-editor-status error';
+                self.showNotification('Failed to save: ' + error.message, 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = '💾 Save Changes';
+            }
+        });
+        
+        // Live preview on typing (debounced)
+        let previewTimeout;
+        editor.addEventListener('input', () => {
+            clearTimeout(previewTimeout);
+            previewTimeout = setTimeout(updatePreview, 500);
+        });
+        
+        // Initial load
+        loadWelcomeHTML();
+    }
+
+        renderUserManagerApp() {
         const self = this;
         
         return '<div class="user-manager-app">' +
