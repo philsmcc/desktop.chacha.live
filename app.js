@@ -1142,6 +1142,9 @@ class DesktopOS {
             } else if (item.name.toLowerCase().endsWith('.pdf')) {
                 // Open PDF in viewer window
                 this.openPDFViewer(item.name, url);
+            } else if (item.name.toLowerCase().endsWith('.html') || item.name.toLowerCase().endsWith('.htm')) {
+                // Open HTML files in the ChaCha browser
+                this.openBrowserWithUrl(url);
             } else {
                 // Download other files
                 window.open(url, '_blank');
@@ -1156,8 +1159,8 @@ class DesktopOS {
         const container = document.getElementById("windows-container");
         
         const offset = this.windows.size * 30;
-        const left = (appId === 'welcome' ? 250 : 100) + offset;
-        const top = 50 + offset;
+        const left = 150 + offset;
+        const top = 80 + offset;
 
         const windowEl = document.createElement("div");
         windowEl.className = "window";
