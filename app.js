@@ -92,6 +92,13 @@ class DesktopOS {
                 icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>',
                 defaultSize: { width: 1100, height: 750 },
                 content: () => this.renderLessonPlannerApp()
+            },
+            {
+                id: "shoutouts",
+                name: "Shoutouts",
+                icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="10" x2="15" y2="10"/></svg>',
+                defaultSize: { width: 450, height: 600 },
+                content: () => this.renderShoutoutsApp()
             }
         ];
         
@@ -1549,6 +1556,10 @@ class DesktopOS {
         
         if (appId === "lessonplanner") {
             setTimeout(() => this.initLessonPlanner(windowEl), 50);
+        }
+        
+        if (appId === "shoutouts") {
+            setTimeout(() => this.initShoutouts(windowEl), 50);
         }
     }
 
@@ -6475,7 +6486,142 @@ Start by introducing yourself warmly and asking their name if you don't know it 
     }
 
 
-    // ===== LESSON PLANNER APP =====
+    
+    // ===== SHOUTOUTS APP =====
+    
+    renderShoutoutsApp() {
+        return '<div class="shoutouts-app">' +
+            '<div class="shoutouts-header">' +
+                '<h2>📢 ChaCha Shoutouts</h2>' +
+                '<p class="shoutouts-domain">Loading...</p>' +
+            '</div>' +
+            '<div class="shoutouts-compose">' +
+                '<textarea id="shoutout-input" placeholder="What\'s happening?" maxlength="500"></textarea>' +
+                '<div class="shoutouts-compose-footer">' +
+                    '<span class="char-count">500</span>' +
+                    '<button id="shoutout-post-btn" class="shoutout-btn">Post</button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="shoutouts-feed" id="shoutouts-feed">' +
+                '<div class="shoutouts-loading"><div class="spinner"></div><p>Loading shoutouts...</p></div>' +
+            '</div>' +
+        '</div>';
+    }
+    
+    initShoutouts(windowEl) {
+        const self = this;
+        const feedEl = windowEl.querySelector('#shoutouts-feed');
+        const inputEl = windowEl.querySelector('#shoutout-input');
+        const postBtn = windowEl.querySelector('#shoutout-post-btn');
+        const charCount = windowEl.querySelector('.char-count');
+        const domainEl = windowEl.querySelector('.shoutouts-domain');
+        
+        // Update character count
+        inputEl.addEventListener('input', () => {
+            const remaining = 500 - inputEl.value.length;
+            charCount.textContent = remaining;
+            charCount.style.color = remaining < 50 ? '#e74c3c' : remaining < 100 ? '#f39c12' : 'var(--text-secondary)';
+        });
+        
+        // Load shoutouts
+        async function loadShoutouts() {
+            try {
+                const response = await self.api('/shoutouts');
+                domainEl.textContent = '@' + response.domain;
+                
+                if (response.shoutouts.length === 0) {
+                    feedEl.innerHTML = '<div class="shoutouts-empty"><p>No shoutouts yet!</p><p>Be the first to post something.</p></div>';
+                    return;
+                }
+                
+                feedEl.innerHTML = response.shoutouts.map(shoutout => {
+                    const date = new Date(shoutout.created_at);
+                    const timeAgo = getTimeAgo(date);
+                    const initial = (shoutout.user_name || shoutout.user_email)[0].toUpperCase();
+                    
+                    return '<div class="shoutout-item">' +
+                        '<div class="shoutout-avatar">' + initial + '</div>' +
+                        '<div class="shoutout-content">' +
+                            '<div class="shoutout-meta">' +
+                                '<span class="shoutout-name">' + (shoutout.user_name || shoutout.user_email.split('@')[0]) + '</span>' +
+                                '<span class="shoutout-time">' + timeAgo + '</span>' +
+                            '</div>' +
+                            '<p class="shoutout-text">' + escapeHtml(shoutout.content) + '</p>' +
+                        '</div>' +
+                    '</div>';
+                }).join('');
+            } catch (error) {
+                feedEl.innerHTML = '<div class="shoutouts-error"><p>Failed to load shoutouts</p></div>';
+            }
+        }
+        
+        // Post shoutout
+        async function postShoutout() {
+            const content = inputEl.value.trim();
+            if (!content) return;
+            
+            postBtn.disabled = true;
+            postBtn.textContent = 'Posting...';
+            
+            try {
+                await self.api('/shoutouts', {
+                    method: 'POST',
+                    body: JSON.stringify({ content })
+                });
+                
+                inputEl.value = '';
+                charCount.textContent = '500';
+                charCount.style.color = 'var(--text-secondary)';
+                await loadShoutouts();
+                self.showNotification('Shoutout posted!', 'success');
+            } catch (error) {
+                self.showNotification('Failed to post: ' + error.message, 'error');
+            } finally {
+                postBtn.disabled = false;
+                postBtn.textContent = 'Post';
+            }
+        }
+        
+        // Helper functions
+        function getTimeAgo(date) {
+            const seconds = Math.floor((new Date() - date) / 1000);
+            if (seconds < 60) return 'just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return minutes + 'm ago';
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return hours + 'h ago';
+            const days = Math.floor(hours / 24);
+            if (days < 7) return days + 'd ago';
+            return date.toLocaleDateString();
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Event listeners
+        postBtn.addEventListener('click', postShoutout);
+        inputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                postShoutout();
+            }
+        });
+        
+        // Initial load
+        loadShoutouts();
+        
+        // Auto-refresh every 30 seconds
+        const refreshInterval = setInterval(loadShoutouts, 30000);
+        
+        // Clean up on window close
+        windowEl.addEventListener('windowclose', () => {
+            clearInterval(refreshInterval);
+        });
+    }
+
+// ===== LESSON PLANNER APP =====
     
     renderLessonPlannerApp() {
         return '<div class="lesson-planner-app">' +

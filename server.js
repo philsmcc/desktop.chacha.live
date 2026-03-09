@@ -1902,10 +1902,95 @@ pool.query(`
     )
 `).catch(err => console.error('Lesson plans table creation error:', err));
 
+
+// Create shoutouts table for domain-based social feed
+pool.query(`
+    CREATE TABLE IF NOT EXISTS shoutouts (
+        id SERIAL PRIMARY KEY,
+        user_email VARCHAR(255) NOT NULL,
+        user_name VARCHAR(255),
+        domain VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+`).catch(err => console.error('Shoutouts table creation error:', err));
+
+// Create index on domain for faster queries
+pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_shoutouts_domain ON shoutouts(domain)
+`).catch(err => console.error('Shoutouts index creation error:', err));
+
 // Add reading_content column if it doesn't exist (for existing databases)
 pool.query(`
     ALTER TABLE lesson_plans ADD COLUMN IF NOT EXISTS reading_content TEXT
 `).catch(err => console.error('Adding reading_content column:', err));
+
+
+// =====================================================
+// ChaCha Shoutouts - Domain-based social feed
+// =====================================================
+
+// Get domain from email
+function getDomainFromEmail(email) {
+    return email.split('@')[1]?.toLowerCase() || 'unknown';
+}
+
+// Get shoutouts for user's domain (last 50)
+app.get('/api/shoutouts', authenticateToken, async (req, res) => {
+    try {
+        const domain = getDomainFromEmail(req.user.email);
+        
+        const result = await pool.query(
+            `SELECT id, user_email, user_name, content, created_at 
+             FROM shoutouts 
+             WHERE domain = $1 
+             ORDER BY created_at DESC 
+             LIMIT 50`,
+            [domain]
+        );
+        
+        res.json({ 
+            shoutouts: result.rows,
+            domain: domain
+        });
+    } catch (error) {
+        console.error('Get shoutouts error:', error);
+        res.status(500).json({ error: 'Failed to get shoutouts' });
+    }
+});
+
+// Post a new shoutout
+app.post('/api/shoutouts', authenticateToken, async (req, res) => {
+    try {
+        const { content } = req.body;
+        
+        if (!content || content.trim().length === 0) {
+            return res.status(400).json({ error: 'Content is required' });
+        }
+        
+        if (content.length > 500) {
+            return res.status(400).json({ error: 'Content must be 500 characters or less' });
+        }
+        
+        const domain = getDomainFromEmail(req.user.email);
+        const userName = req.user.name || req.user.email.split('@')[0];
+        
+        const result = await pool.query(
+            `INSERT INTO shoutouts (user_email, user_name, domain, content) 
+             VALUES ($1, $2, $3, $4) 
+             RETURNING id, user_email, user_name, content, created_at`,
+            [req.user.email, userName, domain, content.trim()]
+        );
+        
+        res.json({ 
+            success: true, 
+            shoutout: result.rows[0]
+        });
+    } catch (error) {
+        console.error('Post shoutout error:', error);
+        res.status(500).json({ error: 'Failed to post shoutout' });
+    }
+});
 
 // Get lesson context from S3 + terminal context
 app.get('/api/lesson/context', authenticateToken, async (req, res) => {
