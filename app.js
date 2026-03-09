@@ -1337,9 +1337,9 @@ class DesktopOS {
             win.element.style.zIndex = ++this.windowZIndex;
             win.minimized = false;
             // Navigate to the URL in the existing browser
-            const iframe = win.element.querySelector('iframe');
+            const iframe = win.element.querySelector('.browser-iframe');
             const urlInput = win.element.querySelector('.browser-url-input');
-            const homepageContainer = win.element.querySelector('.browser-homepage');
+            const homepageContainer = win.element.querySelector('.browser-homepage-container');
             if (iframe) {
                 iframe.classList.remove('hidden');
                 iframe.src = url;
@@ -1357,9 +1357,9 @@ class DesktopOS {
             setTimeout(() => {
                 if (this.windows.has('browser')) {
                     const win = this.windows.get('browser');
-                    const iframe = win.element.querySelector('iframe');
+                    const iframe = win.element.querySelector('.browser-iframe');
                     const urlInput = win.element.querySelector('.browser-url-input');
-                    const homepageContainer = win.element.querySelector('.browser-homepage');
+                    const homepageContainer = win.element.querySelector('.browser-homepage-container');
                     if (iframe) {
                         iframe.classList.remove('hidden');
                         iframe.src = url;
