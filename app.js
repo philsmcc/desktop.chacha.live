@@ -5104,8 +5104,9 @@ class DesktopOS {
                         const filePath = item.dataset.path;
                         const isImage = fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i);
                         const isPDF = fileName.match(/\.pdf$/i);
+                        const isHTML = fileName.match(/\.html?$/i);
                         
-                        if (isImage || isPDF) {
+                        if (isImage || isPDF || isHTML) {
                             try {
                                 // Get signed URL for the file
                                 const endpoint = isInSharedFolder ? '/shared/url' : '/files/url';
@@ -5116,6 +5117,8 @@ class DesktopOS {
                                     self.openImageViewer(fileName, url);
                                 } else if (isPDF) {
                                     self.openPDFViewer(fileName, url);
+                                } else if (isHTML) {
+                                    self.openBrowserWithUrl(url);
                                 }
                             } catch (error) {
                                 console.error('Failed to open file:', error);
