@@ -6613,7 +6613,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 progressFill.style.width = '100%';
                 statusEl.textContent = 'Complete!';
                 generatedPlan = response.lessonPlan;
-                setTimeout(() => { renderLessonPlan(generatedPlan); goToStep(3); }, 500);
+                setTimeout(() => { goToStep(3); setTimeout(() => renderLessonPlan(generatedPlan), 50); }, 500);
             } catch (error) { clearInterval(stageInterval); statusEl.textContent = 'Error: ' + error.message; progressFill.style.backgroundColor = '#e74c3c'; }
         }
         
