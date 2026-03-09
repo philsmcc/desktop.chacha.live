@@ -2631,10 +2631,105 @@ app.get('/api/lesson/proxy-image', authenticateToken, async (req, res) => {
     }
 });
 
+
+// Generate student reading material aligned with lesson plan and standards
+app.post('/api/lesson/generate-reading', authenticateToken, async (req, res) => {
+    try {
+        const { lessonPlan, lessonData } = req.body;
+        
+        if (!lessonPlan || !lessonData) {
+            return res.status(400).json({ error: 'Lesson plan and data required' });
+        }
+        
+        const systemPrompt = `You are an expert educational content writer creating student reading material.
+
+Create engaging, age-appropriate reading content for students that:
+1. Directly supports the learning objectives of the lesson
+2. Thoroughly covers the teaching standard: ${lessonData.standard || 'the topic'}
+3. Is written at the appropriate reading level for ${lessonData.grade || 'the grade level'}
+4. Includes clear explanations of key concepts
+5. Uses examples and analogies students can relate to
+6. Has engaging section headers
+7. Includes vocabulary words with definitions
+8. Ends with comprehension questions
+
+Format your response as HTML with proper semantic tags:
+- Use <h1> for the main title
+- Use <h2> for section headers
+- Use <p> for paragraphs
+- Use <strong> for vocabulary words (first occurrence)
+- Use <ul>/<li> for lists
+- Use <blockquote> for important quotes or key takeaways
+- Use <div class="vocabulary"> for vocabulary section
+- Use <div class="comprehension-questions"> for questions section
+
+The reading should be comprehensive enough to cover the standard fully, but engaging and not overwhelming.
+Include real-world connections and interesting facts where appropriate.`;
+
+        const userPrompt = `Create student reading material for this lesson:
+
+Subject: ${lessonData.subject}
+Grade Level: ${lessonData.grade}
+Topic: ${lessonData.topic}
+Standard: ${lessonData.standard || 'Not specified'}
+Duration: ${lessonData.duration}
+
+Lesson Overview: ${lessonPlan.overview || ''}
+Learning Objectives: ${JSON.stringify(lessonPlan.objectives || [])}
+Key Points: ${JSON.stringify(lessonPlan.directInstruction?.keyPoints || [])}
+Fun Facts: ${JSON.stringify(lessonPlan.funFacts || [])}
+
+Please create comprehensive, engaging reading material that students can read independently or with guidance.
+The reading should thoroughly cover the teaching standard and support the lesson objectives.
+Make it interesting and relatable for ${lessonData.grade} students.`;
+
+        // Use Claude Sonnet for high-quality educational content
+        const modelId = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
+        
+        const requestBody = {
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 8000,
+            temperature: 0.7,
+            messages: [
+                { role: 'user', content: systemPrompt + '\n\n' + userPrompt }
+            ]
+        };
+
+        const command = new InvokeModelCommand({
+            modelId,
+            body: JSON.stringify(requestBody),
+            contentType: 'application/json',
+            accept: 'application/json'
+        });
+
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        let readingContent = responseBody.content?.[0]?.text || '';
+        
+        // Clean up any markdown code blocks if present
+        readingContent = readingContent.replace(/\`\`\`html\n?/gi, '').replace(/\`\`\`\n?/gi, '').trim();
+        
+        res.json({ 
+            success: true,
+            readingContent,
+            metadata: {
+                subject: lessonData.subject,
+                grade: lessonData.grade,
+                topic: lessonData.topic,
+                standard: lessonData.standard,
+                generatedAt: new Date().toISOString()
+            }
+        });
+    } catch (error) {
+        console.error('Reading generation error:', error);
+        res.status(500).json({ error: 'Failed to generate reading material: ' + error.message });
+    }
+});
+
 // Save lesson plan with images to teacher's files
 app.post('/api/lesson/save-to-files', authenticateToken, async (req, res) => {
     try {
-        const { lessonPlan, includedSections, options, images = [] } = req.body;
+        const { lessonPlan, includedSections, options, images = [], readingContent } = req.body;
         
         const prefix = getUserPrefix(req.user.email);
         const safeTitle = (lessonPlan.title || 'Lesson_Plan').replace(/[^a-z0-9\s]/gi, '').replace(/\s+/g, '_');
@@ -2693,6 +2788,42 @@ app.post('/api/lesson/save-to-files', authenticateToken, async (req, res) => {
             ContentType: 'text/html'
         }));
         
+        // Save reading material as a separate HTML file if provided
+        if (readingContent) {
+            const readingHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Reading - ${lessonPlan.title || 'Lesson'}</title>
+    <style>
+        body { font-family: Georgia, serif; line-height: 1.8; max-width: 800px; margin: 0 auto; padding: 40px 20px; color: #333; background: #fafafa; }
+        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        h2 { color: #34495e; margin-top: 30px; border-left: 4px solid #3498db; padding-left: 10px; }
+        p { text-align: justify; margin-bottom: 15px; }
+        strong { color: #e67e22; }
+        ul, ol { margin: 15px 0; padding-left: 25px; }
+        li { margin-bottom: 8px; }
+        blockquote { background: #f8f9fa; border-left: 4px solid #9b59b6; padding: 15px 20px; margin: 20px 0; font-style: italic; }
+        .vocabulary { background: #e8f6f3; border: 1px solid #1abc9c; border-radius: 8px; padding: 20px; margin: 25px 0; }
+        .comprehension-questions { background: #fef9e7; border: 1px solid #f1c40f; border-radius: 8px; padding: 20px; margin: 25px 0; }
+        @media print { body { background: white; max-width: 100%; } }
+    </style>
+</head>
+<body>
+    ${readingContent}
+</body>
+</html>`;
+            
+            const readingKey = `${lessonFolder}/student_reading.html`;
+            await s3Client.send(new PutObjectCommand({
+                Bucket: BUCKET,
+                Key: readingKey,
+                Body: readingHtml,
+                ContentType: 'text/html'
+            }));
+        }
+        
         // Create a metadata JSON file
         const metadata = {
             title: lessonPlan.title,
@@ -2701,6 +2832,7 @@ app.post('/api/lesson/save-to-files', authenticateToken, async (req, res) => {
             topic: lessonPlan.topic || options?.topic,
             createdAt: new Date().toISOString(),
             images: savedImages.length,
+            hasReading: !!readingContent,
             folder: `Documents/Lessons/${folderName}`
         };
         
@@ -2722,7 +2854,7 @@ app.post('/api/lesson/save-to-files', authenticateToken, async (req, res) => {
             htmlPath: `files/Documents/Lessons/${folderName}/lesson_plan.html`,
             htmlUrl: htmlUrl,
             imageCount: savedImages.length,
-            message: `Lesson saved to Documents/Lessons/${folderName}`
+            message: `Lesson${readingContent ? ' and reading material' : ''} saved to Documents/Lessons/${folderName}`
         });
     } catch (error) {
         console.error('Save to files error:', error);

@@ -5502,3 +5502,216 @@ button, .btn, .action-btn, .download-btn, .search-btn {
     padding: 40px;
     color: var(--text-secondary);
 }
+
+/* =====================================================
+   Reading Material Styles (Step 6)
+   ===================================================== */
+
+.reading-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 20px;
+    gap: 15px;
+}
+
+.reading-header {
+    text-align: center;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.reading-header h3 {
+    font-size: 1.4em;
+    color: var(--text-primary);
+    margin: 0 0 5px 0;
+}
+
+.reading-header p {
+    font-size: 0.9em;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.reading-status {
+    min-height: 40px;
+}
+
+.generating-reading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    padding: 20px;
+    background: var(--bg-lighter);
+    border-radius: 8px;
+}
+
+.generating-reading p {
+    color: var(--text-secondary);
+    margin: 0;
+    font-size: 0.95em;
+}
+
+.success-status {
+    color: #27ae60;
+    text-align: center;
+    font-weight: 500;
+}
+
+.error-status {
+    color: #e74c3c;
+    text-align: center;
+    font-weight: 500;
+}
+
+.reading-content {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg-lighter);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.reading-preview {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    font-family: 'Georgia', serif;
+    line-height: 1.7;
+    color: #333;
+}
+
+.reading-preview h1 {
+    font-size: 1.8em;
+    color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.reading-preview h2 {
+    font-size: 1.4em;
+    color: #34495e;
+    margin-top: 25px;
+    margin-bottom: 15px;
+    border-left: 4px solid #3498db;
+    padding-left: 10px;
+}
+
+.reading-preview p {
+    text-align: justify;
+    margin-bottom: 15px;
+}
+
+.reading-preview strong {
+    color: #e67e22;
+    font-weight: 600;
+}
+
+.reading-preview ul, .reading-preview ol {
+    margin: 15px 0;
+    padding-left: 25px;
+}
+
+.reading-preview li {
+    margin-bottom: 8px;
+}
+
+.reading-preview blockquote {
+    background: #f8f9fa;
+    border-left: 4px solid #9b59b6;
+    padding: 15px 20px;
+    margin: 20px 0;
+    font-style: italic;
+    color: #555;
+}
+
+.reading-preview .vocabulary {
+    background: #e8f6f3;
+    border: 1px solid #1abc9c;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 25px 0;
+}
+
+.reading-preview .vocabulary h2 {
+    color: #16a085;
+    border-left-color: #1abc9c;
+}
+
+.reading-preview .comprehension-questions {
+    background: #fef9e7;
+    border: 1px solid #f1c40f;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 25px 0;
+}
+
+.reading-preview .comprehension-questions h2 {
+    color: #d4ac0d;
+    border-left-color: #f1c40f;
+}
+
+.reading-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+}
+
+.reading-actions .action-btn {
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+/* Dark mode adjustments for reading preview */
+.dark-mode .reading-preview {
+    background: #1a1a2e;
+    color: #e8e8e8;
+}
+
+.dark-mode .reading-preview h1 {
+    color: #74b9ff;
+    border-bottom-color: #0984e3;
+}
+
+.dark-mode .reading-preview h2 {
+    color: #81ecec;
+    border-left-color: #00cec9;
+}
+
+.dark-mode .reading-preview strong {
+    color: #fdcb6e;
+}
+
+.dark-mode .reading-preview blockquote {
+    background: #2d3436;
+    border-left-color: #a29bfe;
+    color: #dfe6e9;
+}
+
+.dark-mode .reading-preview .vocabulary {
+    background: rgba(26, 188, 156, 0.15);
+    border-color: #1abc9c;
+}
+
+.dark-mode .reading-preview .comprehension-questions {
+    background: rgba(241, 196, 15, 0.15);
+    border-color: #f1c40f;
+}
+
+/* Step indicator for Reading step */
+.step[data-step="6"] .step-number {
+    background: linear-gradient(135deg, #9b59b6, #8e44ad);
+}
+
+.step[data-step="6"].active .step-number {
+    background: linear-gradient(135deg, #8e44ad, #7d3c98);
+    box-shadow: 0 0 10px rgba(155, 89, 182, 0.5);
+}

@@ -6512,7 +6512,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                         '<div class="generating-container"><div class="spinner"></div><h3>Generating Your Lesson Plan...</h3><p class="generating-status">Analyzing requirements...</p><div class="progress-bar"><div class="progress-fill"></div></div></div>' +
                     '</div>' +
                     '<div class="lesson-panel" id="lesson-step-3">' +
-                        '<div class="lesson-review"><div class="review-header"><h3 id="review-title">Lesson Plan Review</h3><div class="review-actions"><button id="lesson-regenerate" class="action-btn">🔄 Regenerate</button><button id="lesson-find-images" class="action-btn">🖼️ Find Images</button><button id="lesson-export-btn" class="action-btn primary">💾 Save & Export</button></div></div><div class="lesson-sections" id="lesson-sections"></div></div>' +
+                        '<div class="lesson-review"><div class="review-header"><h3 id="review-title">Lesson Plan Review</h3><div class="review-actions"><button id="lesson-regenerate" class="action-btn">🔄 Regenerate</button><button id="lesson-find-images" class="action-btn">🖼️ Find Images</button><button id="lesson-generate-reading" class="action-btn">📖 Generate Reading</button><button id="lesson-export-btn" class="action-btn primary">💾 Save & Export</button></div></div><div class="lesson-sections" id="lesson-sections"></div></div>' +
                     '</div>' +
                     '<div class="lesson-panel" id="lesson-step-4">' +
                         '<div class="image-search-container">' +
@@ -6524,7 +6524,15 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                         '</div>' +
                     '</div>' +
                     '<div class="lesson-panel" id="lesson-step-5">' +
-                        '<div class="export-container"><div class="export-preview" id="pdf-preview"></div><div class="export-options"><h4>Export Options</h4><label class="checkbox-label"><input type="checkbox" id="include-images" checked> Include selected images</label><label class="checkbox-label"><input type="checkbox" id="include-standards" checked> Include standards alignment</label><label class="checkbox-label"><input type="checkbox" id="include-blended" checked> Include blended learning suggestions</label><div class="export-buttons"><button id="save-to-files-btn" class="download-btn primary">💾 Save to My Files</button><button id="download-pdf-btn" class="download-btn">📥 Download PDF</button></div><p class="export-note" id="export-status"></p></div></div>' +
+                        '<div class="export-container"><div class="export-preview" id="pdf-preview"></div><div class="export-options"><h4>Export Options</h4><label class="checkbox-label"><input type="checkbox" id="include-images" checked> Include selected images</label><label class="checkbox-label"><input type="checkbox" id="include-standards" checked> Include standards alignment</label><label class="checkbox-label"><input type="checkbox" id="include-blended" checked> Include blended learning suggestions</label><label class="checkbox-label"><input type="checkbox" id="include-reading" checked> Include student reading material</label><div class="export-buttons"><button id="save-to-files-btn" class="download-btn primary">💾 Save to My Files</button><button id="download-pdf-btn" class="download-btn">📥 Download PDF</button></div><p class="export-note" id="export-status"></p></div></div>' +
+                    '</div>' +
+                    '<div class="lesson-panel" id="lesson-step-6">' +
+                        '<div class="reading-container">' +
+                            '<div class="reading-header"><h3>📖 Student Reading Material</h3><p>AI-generated reading content aligned with your lesson standards</p></div>' +
+                            '<div class="reading-status" id="reading-status"></div>' +
+                            '<div class="reading-content" id="reading-content"><p class="placeholder-text">Click "Generate Reading" to create student reading material based on your lesson plan and standards.</p></div>' +
+                            '<div class="reading-actions"><button id="reading-back-btn" class="action-btn">← Back to Plan</button><button id="reading-regenerate-btn" class="action-btn">🔄 Regenerate</button><button id="reading-continue-btn" class="action-btn primary">Continue to Export →</button></div>' +
+                        '</div>' +
                     '</div>' +
                 '</div>' +
             '</div>' +
@@ -6747,6 +6755,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
             const includeImages = windowEl.querySelector('#include-images').checked;
             const includeStandards = windowEl.querySelector('#include-standards').checked;
             const includeBlended = windowEl.querySelector('#include-blended').checked;
+            const includeReading = windowEl.querySelector('#include-reading').checked;
             try {
                 const response = await self.api('/lesson/export-pdf', { method: 'POST', body: JSON.stringify({ lessonPlan: generatedPlan, includedSections, options: { includeImages, includeStandards, includeBlended } }) });
                 const previewEl = windowEl.querySelector('#pdf-preview');
@@ -6771,7 +6780,8 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                     body: JSON.stringify({ 
                         lessonPlan: generatedPlan, 
                         includedSections, 
-                        options: { includeStandards, includeBlended },
+                        options: { includeStandards, includeBlended, includeReading },
+                        readingContent: includeReading ? generatedReading : null,
                         images: selectedImages
                     }) 
                 });
@@ -6812,7 +6822,42 @@ Start by introducing yourself warmly and asking their name if you don't know it 
             } catch (error) { self.showNotification('Failed to load lesson', 'error'); }
         }
         
-        sendBtn.addEventListener('click', sendMessage);
+        
+        // Reading material state
+        let generatedReading = null;
+        
+        async function generateReadingMaterial() {
+            if (!generatedPlan) {
+                self.showNotification('Please generate a lesson plan first', 'warning');
+                return;
+            }
+            
+            goToStep(6);
+            const statusEl = windowEl.querySelector('#reading-status');
+            const contentEl = windowEl.querySelector('#reading-content');
+            
+            statusEl.innerHTML = '<div class="generating-reading"><div class="spinner"></div><p>Generating student reading material aligned with standards...</p></div>';
+            contentEl.innerHTML = '';
+            
+            try {
+                const response = await self.api('/lesson/generate-reading', {
+                    method: 'POST',
+                    body: JSON.stringify({ lessonPlan: generatedPlan, lessonData })
+                });
+                
+                statusEl.innerHTML = '<p class="success-status">✅ Reading material generated successfully!</p>';
+                generatedReading = response.readingContent;
+                
+                // Display the reading content with styling
+                contentEl.innerHTML = '<div class="reading-preview">' + response.readingContent + '</div>';
+                
+            } catch (error) {
+                statusEl.innerHTML = '<p class="error-status">❌ Failed to generate: ' + error.message + '</p>';
+                contentEl.innerHTML = '<p class="placeholder-text">Click "Regenerate" to try again.</p>';
+            }
+        }
+        
+sendBtn.addEventListener('click', sendMessage);
         chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
         generateBtn.addEventListener('click', generateLessonPlan);
         windowEl.querySelector('#lesson-export-btn').addEventListener('click', exportToPDF);
@@ -6829,6 +6874,13 @@ Start by introducing yourself warmly and asking their name if you don't know it 
         windowEl.querySelector('#image-back-btn').addEventListener('click', () => goToStep(3));
         windowEl.querySelector('#image-continue-btn').addEventListener('click', () => goToStep(5));
         windowEl.querySelector('#save-to-files-btn').addEventListener('click', saveToFiles);
+        // Reading material bindings
+        windowEl.querySelector('#lesson-generate-reading').addEventListener('click', generateReadingMaterial);
+        windowEl.querySelector('#reading-back-btn').addEventListener('click', () => goToStep(3));
+        windowEl.querySelector('#reading-regenerate-btn').addEventListener('click', generateReadingMaterial);
+        windowEl.querySelector('#reading-continue-btn').addEventListener('click', () => goToStep(5));
+        
+
         
         loadTeacherContext();
         loadHistory();
