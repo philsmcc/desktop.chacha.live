@@ -5715,3 +5715,24 @@ button, .btn, .action-btn, .download-btn, .search-btn {
     background: linear-gradient(135deg, #8e44ad, #7d3c98);
     box-shadow: 0 0 10px rgba(155, 89, 182, 0.5);
 }
+
+/* Loading placeholder for reading generation */
+.loading-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+/* Disabled button state for action buttons */
+.action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.action-btn:disabled:hover {
+    transform: none;
+}

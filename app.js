@@ -6485,6 +6485,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                         '<div class="step" data-step="3"><span class="step-num">3</span><span class="step-label">Review & Edit</span></div>' +
                         '<div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">Find Images</span></div>' +
                         '<div class="step" data-step="5"><span class="step-num">5</span><span class="step-label">Save & Export</span></div>' +
+                        '<div class="step" data-step="6"><span class="step-num">6</span><span class="step-label">Reading</span></div>' +
                     '</div>' +
                     '<div class="lesson-history"><h4>Recent Lessons</h4><div class="history-list"></div></div>' +
                 '</div>' +
@@ -6773,6 +6774,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
             windowEl.querySelectorAll('.section-toggle input:checked').forEach(input => { includedSections[input.dataset.section] = true; });
             const includeStandards = windowEl.querySelector('#include-standards').checked;
             const includeBlended = windowEl.querySelector('#include-blended').checked;
+            const includeReading = windowEl.querySelector('#include-reading')?.checked || false;
             
             try {
                 const response = await self.api('/lesson/save-to-files', { 
@@ -6827,17 +6829,24 @@ Start by introducing yourself warmly and asking their name if you don't know it 
         let generatedReading = null;
         
         async function generateReadingMaterial() {
+            console.log('generateReadingMaterial called, generatedPlan:', generatedPlan);
             if (!generatedPlan) {
                 self.showNotification('Please generate a lesson plan first', 'warning');
                 return;
             }
             
+            // Disable buttons to prevent multiple clicks
+            const generateReadingBtn = windowEl.querySelector('#lesson-generate-reading');
+            const regenerateBtn = windowEl.querySelector('#reading-regenerate-btn');
+            if (generateReadingBtn) generateReadingBtn.disabled = true;
+            if (regenerateBtn) regenerateBtn.disabled = true;
+            
             goToStep(6);
             const statusEl = windowEl.querySelector('#reading-status');
             const contentEl = windowEl.querySelector('#reading-content');
             
-            statusEl.innerHTML = '<div class="generating-reading"><div class="spinner"></div><p>Generating student reading material aligned with standards...</p></div>';
-            contentEl.innerHTML = '';
+            statusEl.innerHTML = '<div class="generating-reading"><div class="spinner"></div><p>Generating student reading material aligned with standards... This may take 30-60 seconds.</p></div>';
+            contentEl.innerHTML = '<div class="loading-placeholder"><p>Please wait while the AI creates comprehensive reading material for your students...</p></div>';
             
             try {
                 const response = await self.api('/lesson/generate-reading', {
@@ -6851,9 +6860,17 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 // Display the reading content with styling
                 contentEl.innerHTML = '<div class="reading-preview">' + response.readingContent + '</div>';
                 
+                // Re-enable buttons
+                if (generateReadingBtn) generateReadingBtn.disabled = false;
+                if (regenerateBtn) regenerateBtn.disabled = false;
+                
             } catch (error) {
                 statusEl.innerHTML = '<p class="error-status">❌ Failed to generate: ' + error.message + '</p>';
                 contentEl.innerHTML = '<p class="placeholder-text">Click "Regenerate" to try again.</p>';
+                
+                // Re-enable buttons on error
+                if (generateReadingBtn) generateReadingBtn.disabled = false;
+                if (regenerateBtn) regenerateBtn.disabled = false;
             }
         }
         
@@ -6875,7 +6892,16 @@ sendBtn.addEventListener('click', sendMessage);
         windowEl.querySelector('#image-continue-btn').addEventListener('click', () => goToStep(5));
         windowEl.querySelector('#save-to-files-btn').addEventListener('click', saveToFiles);
         // Reading material bindings
-        windowEl.querySelector('#lesson-generate-reading').addEventListener('click', generateReadingMaterial);
+        const readingBtn = windowEl.querySelector('#lesson-generate-reading');
+        console.log('Reading button found:', readingBtn);
+        if (readingBtn) {
+            readingBtn.addEventListener('click', () => {
+                console.log('Reading button clicked!');
+                generateReadingMaterial();
+            });
+        } else {
+            console.error('Could not find #lesson-generate-reading button');
+        }
         windowEl.querySelector('#reading-back-btn').addEventListener('click', () => goToStep(3));
         windowEl.querySelector('#reading-regenerate-btn').addEventListener('click', generateReadingMaterial);
         windowEl.querySelector('#reading-continue-btn').addEventListener('click', () => goToStep(5));
