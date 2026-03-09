@@ -6638,6 +6638,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                         '<div class="step" data-step="4"><span class="step-num">4</span><span class="step-label">Find Images</span></div>' +
                         '<div class="step" data-step="5"><span class="step-num">5</span><span class="step-label">Save & Export</span></div>' +
                         '<div class="step" data-step="6"><span class="step-num">6</span><span class="step-label">Reading</span></div>' +
+                        '<div class="step" data-step="7"><span class="step-num">7</span><span class="step-label">Quiz</span></div>' +
                     '</div>' +
                     '<div class="lesson-history"><h4>Recent Lessons</h4><div class="history-list"></div></div>' +
                 '</div>' +
@@ -6665,7 +6666,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                         '<div class="generating-container"><div class="spinner"></div><h3>Generating Your Lesson Plan...</h3><p class="generating-status">Analyzing requirements...</p><div class="progress-bar"><div class="progress-fill"></div></div></div>' +
                     '</div>' +
                     '<div class="lesson-panel" id="lesson-step-3">' +
-                        '<div class="lesson-review"><div class="review-header"><h3 id="review-title">Lesson Plan Review</h3><div class="review-actions"><button id="lesson-regenerate" class="action-btn">🔄 Regenerate</button><button id="lesson-find-images" class="action-btn">🖼️ Find Images</button><button id="lesson-generate-reading" class="action-btn">📖 Generate Reading</button><button id="lesson-export-btn" class="action-btn primary">💾 Save & Export</button></div></div><div class="lesson-sections" id="lesson-sections"></div></div>' +
+                        '<div class="lesson-review"><div class="review-header"><h3 id="review-title">Lesson Plan Review</h3><div class="review-actions"><button id="lesson-regenerate" class="action-btn">🔄 Regenerate</button><button id="lesson-find-images" class="action-btn">🖼️ Find Images</button><button id="lesson-generate-reading" class="action-btn">📖 Generate Reading</button><button id="lesson-generate-quiz" class="action-btn">📝 Generate Quiz</button><button id="lesson-export-btn" class="action-btn primary">💾 Save & Export</button></div></div><div class="lesson-sections" id="lesson-sections"></div></div>' +
                     '</div>' +
                     '<div class="lesson-panel" id="lesson-step-4">' +
                         '<div class="image-search-container">' +
@@ -6685,6 +6686,24 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                             '<div class="reading-status" id="reading-status"></div>' +
                             '<div class="reading-content" id="reading-content"><p class="placeholder-text">Click "Generate Reading" to create student reading material based on your lesson plan and standards.</p></div>' +
                             '<div class="reading-actions"><button id="reading-back-btn" class="action-btn">← Back to Plan</button><button id="reading-regenerate-btn" class="action-btn">🔄 Regenerate</button><button id="reading-continue-btn" class="action-btn primary">Continue to Export →</button></div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="lesson-panel" id="lesson-step-7">' +
+                        '<div class="quiz-container">' +
+                            '<div class="quiz-header">' +
+                                '<h3>📝 Quiz Generator</h3>' +
+                                '<p>AI-generated quiz aligned with your lesson and standards</p>' +
+                                '<div class="quiz-code-display">Quiz Code: <span id="quiz-code">------</span></div>' +
+                            '</div>' +
+                            '<div class="quiz-status" id="quiz-status"></div>' +
+                            '<div class="quiz-content" id="quiz-content">' +
+                                '<p class="placeholder-text">Click "Generate Quiz" to create a 12-question quiz based on your lesson plan, reading material, and standards.</p>' +
+                            '</div>' +
+                            '<div class="quiz-actions">' +
+                                '<button id="quiz-back-btn" class="action-btn">← Back to Plan</button>' +
+                                '<button id="quiz-regenerate-btn" class="action-btn">🔄 Regenerate</button>' +
+                                '<button id="quiz-save-btn" class="action-btn primary" disabled>✓ Save Quiz</button>' +
+                            '</div>' +
                         '</div>' +
                     '</div>' +
                 '</div>' +
@@ -6976,7 +6995,11 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 lessonData = lesson.data;
                 currentLessonId = parseInt(id);
                 generatedReading = lesson.readingContent || null;
-                console.log('Loaded lesson ID:', currentLessonId, 'Has reading:', !!generatedReading);
+                if (lesson.quizData) {
+                    generatedQuiz = lesson.quizData.questions || null;
+                    quizCode = lesson.quizData.quizCode || null;
+                }
+                console.log('Loaded lesson ID:', currentLessonId, 'Has reading:', !!generatedReading, 'Has quiz:', !!generatedQuiz);
                 renderLessonPlan(generatedPlan);
                 goToStep(3);
             } catch (error) { self.showNotification('Failed to load lesson', 'error'); }
@@ -6985,8 +7008,217 @@ Start by introducing yourself warmly and asking their name if you don't know it 
         
         // Reading material state
         let generatedReading = null;
+        let generatedQuiz = null;
+        let quizCode = null;
         
-        async function generateReadingMaterial(forceRegenerate = false) {
+        
+        // Generate 6-digit quiz code
+        function generateQuizCode() {
+            return Math.floor(100000 + Math.random() * 900000).toString();
+        }
+        
+        async function generateQuiz(forceRegenerate = false) {
+            console.log('generateQuiz called');
+            if (!generatedPlan) {
+                self.showNotification('Please generate a lesson plan first', 'warning');
+                return;
+            }
+            
+            goToStep(7);
+            const statusEl = windowEl.querySelector('#quiz-status');
+            const contentEl = windowEl.querySelector('#quiz-content');
+            const saveBtn = windowEl.querySelector('#quiz-save-btn');
+            const quizCodeEl = windowEl.querySelector('#quiz-code');
+            
+            // If we already have quiz and not forcing regeneration, just display it
+            if (generatedQuiz && !forceRegenerate) {
+                statusEl.innerHTML = '<p class="success-status">✅ Quiz loaded from saved lesson</p>';
+                renderQuizEditor(generatedQuiz);
+                quizCodeEl.textContent = quizCode || generateQuizCode();
+                saveBtn.disabled = false;
+                return;
+            }
+            
+            // Disable buttons
+            const generateQuizBtn = windowEl.querySelector('#lesson-generate-quiz');
+            const regenerateBtn = windowEl.querySelector('#quiz-regenerate-btn');
+            if (generateQuizBtn) generateQuizBtn.disabled = true;
+            if (regenerateBtn) regenerateBtn.disabled = true;
+            saveBtn.disabled = true;
+            
+            // Generate new quiz code
+            quizCode = generateQuizCode();
+            quizCodeEl.textContent = quizCode;
+            
+            statusEl.innerHTML = '<div class="generating-quiz"><div class="spinner"></div><p>Generating 12-question quiz... This may take 30-60 seconds.</p></div>';
+            contentEl.innerHTML = '<div class="loading-placeholder"><p>Creating a mix of short answer, true/false, and multiple choice questions...</p></div>';
+            
+            try {
+                const response = await self.api('/lesson/generate-quiz', {
+                    method: 'POST',
+                    body: JSON.stringify({ 
+                        lessonPlan: generatedPlan, 
+                        lessonData,
+                        readingContent: generatedReading
+                    })
+                });
+                
+                statusEl.innerHTML = '<p class="success-status">✅ Quiz generated! Edit questions below, then save.</p>';
+                generatedQuiz = response.questions;
+                
+                renderQuizEditor(generatedQuiz);
+                
+                // Save quiz to database
+                if (currentLessonId) {
+                    try {
+                        await self.api('/lesson/save-quiz', {
+                            method: 'POST',
+                            body: JSON.stringify({ 
+                                lessonId: currentLessonId, 
+                                quizData: { questions: generatedQuiz, quizCode }
+                            })
+                        });
+                    } catch (saveErr) {
+                        console.error('Failed to auto-save quiz:', saveErr);
+                    }
+                }
+                
+                saveBtn.disabled = false;
+                
+            } catch (error) {
+                statusEl.innerHTML = '<p class="error-status">❌ Failed to generate: ' + error.message + '</p>';
+                contentEl.innerHTML = '<p class="placeholder-text">Click "Regenerate" to try again.</p>';
+            } finally {
+                if (generateQuizBtn) generateQuizBtn.disabled = false;
+                if (regenerateBtn) regenerateBtn.disabled = false;
+            }
+        }
+        
+        function renderQuizEditor(questions) {
+            const contentEl = windowEl.querySelector('#quiz-content');
+            
+            let html = '<div class="quiz-editor">';
+            html += '<div class="quiz-student-info">';
+            html += '<label>Student Name: <input type="text" class="student-name-field" placeholder="________________" readonly></label>';
+            html += '</div>';
+            html += '<div class="quiz-questions">';
+            
+            questions.forEach((q, idx) => {
+                html += '<div class="quiz-question-item" data-index="' + idx + '">';
+                html += '<div class="question-header">';
+                html += '<span class="question-number">Q' + (idx + 1) + '</span>';
+                html += '<span class="question-type ' + q.type.toLowerCase().replace(/\s+/g, '-') + '">' + q.type + '</span>';
+                html += '<button class="remove-question-btn" title="Remove question">✕</button>';
+                html += '</div>';
+                html += '<div class="question-text-edit">';
+                html += '<textarea class="question-text" rows="2">' + escapeHtml(q.question) + '</textarea>';
+                html += '</div>';
+                
+                if (q.type === 'Multiple Choice' && q.options) {
+                    html += '<div class="question-options">';
+                    q.options.forEach((opt, optIdx) => {
+                        const letter = String.fromCharCode(65 + optIdx);
+                        const isCorrect = opt === q.answer || letter === q.answer;
+                        html += '<div class="option-item ' + (isCorrect ? 'correct' : '') + '">';
+                        html += '<input type="radio" name="q' + idx + '" ' + (isCorrect ? 'checked' : '') + ' data-opt="' + optIdx + '">';
+                        html += '<span class="option-letter">' + letter + '.</span>';
+                        html += '<input type="text" class="option-text" value="' + escapeHtml(opt) + '">';
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                } else if (q.type === 'True/False') {
+                    html += '<div class="tf-options">';
+                    html += '<label><input type="radio" name="q' + idx + '" value="True" ' + (q.answer === 'True' ? 'checked' : '') + '> True</label>';
+                    html += '<label><input type="radio" name="q' + idx + '" value="False" ' + (q.answer === 'False' ? 'checked' : '') + '> False</label>';
+                    html += '</div>';
+                } else {
+                    html += '<div class="answer-field">';
+                    html += '<label>Answer: <input type="text" class="answer-text" value="' + escapeHtml(q.answer) + '"></label>';
+                    html += '</div>';
+                }
+                
+                html += '</div>';
+            });
+            
+            html += '</div></div>';
+            contentEl.innerHTML = html;
+            
+            // Add remove button handlers
+            contentEl.querySelectorAll('.remove-question-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const item = e.target.closest('.quiz-question-item');
+                    const idx = parseInt(item.dataset.index);
+                    generatedQuiz.splice(idx, 1);
+                    renderQuizEditor(generatedQuiz);
+                    self.showNotification('Question removed', 'info');
+                });
+            });
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        async function saveQuiz() {
+            const saveBtn = windowEl.querySelector('#quiz-save-btn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+            
+            // Collect edited quiz data from the form
+            const questions = [];
+            windowEl.querySelectorAll('.quiz-question-item').forEach((item, idx) => {
+                const q = {
+                    question: item.querySelector('.question-text').value,
+                    type: generatedQuiz[idx]?.type || 'Short Answer',
+                    answer: ''
+                };
+                
+                if (q.type === 'Multiple Choice') {
+                    q.options = [];
+                    item.querySelectorAll('.option-text').forEach(opt => {
+                        q.options.push(opt.value);
+                    });
+                    const checkedOpt = item.querySelector('input[type="radio"]:checked');
+                    if (checkedOpt) {
+                        const optIdx = parseInt(checkedOpt.dataset.opt);
+                        q.answer = q.options[optIdx];
+                    }
+                } else if (q.type === 'True/False') {
+                    const checkedTF = item.querySelector('input[type="radio"]:checked');
+                    q.answer = checkedTF ? checkedTF.value : 'True';
+                } else {
+                    q.answer = item.querySelector('.answer-text')?.value || '';
+                }
+                
+                questions.push(q);
+            });
+            
+            generatedQuiz = questions;
+            
+            try {
+                if (currentLessonId) {
+                    await self.api('/lesson/save-quiz', {
+                        method: 'POST',
+                        body: JSON.stringify({ 
+                            lessonId: currentLessonId, 
+                            quizData: { questions: generatedQuiz, quizCode }
+                        })
+                    });
+                }
+                self.showNotification('Quiz saved successfully!', 'success');
+                windowEl.querySelector('#quiz-status').innerHTML = '<p class="success-status">✅ Quiz saved!</p>';
+            } catch (error) {
+                self.showNotification('Failed to save quiz: ' + error.message, 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = '✓ Save Quiz';
+            }
+        }
+        
+async function generateReadingMaterial(forceRegenerate = false) {
             console.log('generateReadingMaterial called, generatedPlan:', generatedPlan, 'existing reading:', !!generatedReading);
             if (!generatedPlan) {
                 self.showNotification('Please generate a lesson plan first', 'warning');
@@ -7083,6 +7315,13 @@ sendBtn.addEventListener('click', sendMessage);
         windowEl.querySelector('#reading-back-btn').addEventListener('click', () => goToStep(3));
         windowEl.querySelector('#reading-regenerate-btn').addEventListener('click', () => generateReadingMaterial(true));
         windowEl.querySelector('#reading-continue-btn').addEventListener('click', () => goToStep(5));
+        // Quiz bindings
+        windowEl.querySelector('#lesson-generate-quiz').addEventListener('click', () => generateQuiz(false));
+        windowEl.querySelector('#quiz-back-btn').addEventListener('click', () => goToStep(3));
+        windowEl.querySelector('#quiz-regenerate-btn').addEventListener('click', () => generateQuiz(true));
+        windowEl.querySelector('#quiz-save-btn').addEventListener('click', saveQuiz);
+        
+
         
 
         

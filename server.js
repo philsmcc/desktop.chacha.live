@@ -1925,6 +1925,10 @@ pool.query(`
     ALTER TABLE lesson_plans ADD COLUMN IF NOT EXISTS reading_content TEXT
 `).catch(err => console.error('Adding reading_content column:', err));
 
+pool.query(`
+    ALTER TABLE lesson_plans ADD COLUMN IF NOT EXISTS quiz_data JSONB
+`).catch(err => console.error('Adding reading_content column:', err));
+
 
 // =====================================================
 // ChaCha Shoutouts - Domain-based social feed
@@ -2395,7 +2399,8 @@ app.get('/api/lesson/:id', authenticateToken, async (req, res) => {
                 standard: lesson.standard,
                 duration: lesson.duration
             },
-            readingContent: lesson.reading_content || null
+            readingContent: lesson.reading_content || null,
+            quizData: lesson.quiz_data || null
         });
     } catch (error) {
         console.error('Get lesson error:', error);
@@ -2837,6 +2842,148 @@ app.post('/api/lesson/save-reading', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Save reading error:', error);
         res.status(500).json({ error: 'Failed to save reading content' });
+    }
+});
+
+
+// Generate quiz questions using Claude Opus 4.5
+app.post('/api/lesson/generate-quiz', authenticateToken, async (req, res) => {
+    try {
+        const { lessonPlan, lessonData, readingContent } = req.body;
+        
+        if (!lessonPlan || !lessonData) {
+            return res.status(400).json({ error: 'Lesson plan and data required' });
+        }
+        
+        const systemPrompt = `You are an expert educational assessment designer creating a quiz for students.
+
+Create exactly 12 questions that:
+1. Align with the learning standard: ${lessonData.standard || 'the topic'}
+2. Are appropriate for ${lessonData.grade || 'the grade level'} students
+3. Test understanding of key concepts from the lesson
+4. Include a MIX of question types:
+   - 4 Multiple Choice questions (4 options each, labeled A, B, C, D)
+   - 4 True/False questions
+   - 4 Short Answer questions
+
+For each question provide:
+- question: The question text
+- type: "Multiple Choice", "True/False", or "Short Answer"
+- options: Array of 4 options (only for Multiple Choice)
+- answer: The correct answer
+
+Format your response as a JSON array of 12 question objects.
+Example format:
+[
+  {
+    "question": "What is the main function of chlorophyll?",
+    "type": "Multiple Choice",
+    "options": ["To absorb sunlight", "To store water", "To release oxygen", "To transport nutrients"],
+    "answer": "To absorb sunlight"
+  },
+  {
+    "question": "Photosynthesis only occurs during daylight hours.",
+    "type": "True/False",
+    "answer": "True"
+  },
+  {
+    "question": "Explain why plants are considered producers in the food chain.",
+    "type": "Short Answer",
+    "answer": "Plants are producers because they make their own food through photosynthesis, converting sunlight into energy."
+  }
+]
+
+Make questions progressively challenging. Start with easier recall questions and end with higher-order thinking questions.`;
+
+        const userPrompt = `Create a 12-question quiz for this lesson:
+
+Subject: ${lessonData.subject}
+Grade Level: ${lessonData.grade}
+Topic: ${lessonData.topic}
+Standard: ${lessonData.standard || 'Not specified'}
+
+Lesson Overview: ${lessonPlan.overview || ''}
+Learning Objectives: ${JSON.stringify(lessonPlan.objectives || [])}
+Key Points: ${JSON.stringify(lessonPlan.directInstruction?.keyPoints || [])}
+
+${readingContent ? 'Reading Material Summary: ' + readingContent.substring(0, 2000) : ''}
+
+Create 12 high-quality assessment questions (4 Multiple Choice, 4 True/False, 4 Short Answer) that thoroughly test student understanding of this material.`;
+
+        // Use Claude Opus 4.5 for highest quality quiz generation
+        const modelId = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
+        
+        const requestBody = {
+            anthropic_version: 'bedrock-2023-05-31',
+            max_tokens: 8000,
+            temperature: 0.7,
+            messages: [
+                { role: 'user', content: systemPrompt + '\n\n' + userPrompt }
+            ]
+        };
+
+        const command = new InvokeModelCommand({
+            modelId,
+            body: JSON.stringify(requestBody),
+            contentType: 'application/json',
+            accept: 'application/json'
+        });
+
+        const response = await bedrockClient.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+        let quizContent = responseBody.content?.[0]?.text || '';
+        
+        // Parse JSON from response
+        let questions = [];
+        try {
+            // Try to find JSON array in the response
+            const jsonMatch = quizContent.match(/\[\s*\{[\s\S]*\}\s*\]/);
+            if (jsonMatch) {
+                questions = JSON.parse(jsonMatch[0]);
+            }
+        } catch (e) {
+            console.error('Failed to parse quiz JSON:', e);
+            return res.status(500).json({ error: 'Failed to parse quiz questions' });
+        }
+        
+        // Ensure we have exactly 12 questions (or less)
+        questions = questions.slice(0, 12);
+        
+        res.json({ 
+            success: true,
+            questions,
+            metadata: {
+                subject: lessonData.subject,
+                grade: lessonData.grade,
+                topic: lessonData.topic,
+                standard: lessonData.standard,
+                generatedAt: new Date().toISOString()
+            }
+        });
+    } catch (error) {
+        console.error('Quiz generation error:', error);
+        res.status(500).json({ error: 'Failed to generate quiz: ' + error.message });
+    }
+});
+
+// Save quiz to an existing lesson
+app.post('/api/lesson/save-quiz', authenticateToken, async (req, res) => {
+    try {
+        const { lessonId, quizData } = req.body;
+        
+        if (!lessonId || !quizData) {
+            return res.status(400).json({ error: 'Lesson ID and quiz data required' });
+        }
+        
+        await pool.query(
+            'UPDATE lesson_plans SET quiz_data = $1, updated_at = NOW() WHERE id = $2 AND user_email = $3',
+            [JSON.stringify(quizData), lessonId, req.user.email]
+        );
+        
+        res.json({ success: true, message: 'Quiz saved' });
+    } catch (error) {
+        console.error('Save quiz error:', error);
+        res.status(500).json({ error: 'Failed to save quiz' });
     }
 });
 
