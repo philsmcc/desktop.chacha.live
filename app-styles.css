@@ -5810,7 +5810,7 @@ button, .btn, .action-btn, .download-btn, .search-btn {
 
 .shoutout-btn {
     padding: 8px 20px;
-    background: var(--accent-color);
+    background: #e67e22;
     color: white;
     border: none;
     border-radius: 20px;
@@ -5820,7 +5820,7 @@ button, .btn, .action-btn, .download-btn, .search-btn {
 }
 
 .shoutout-btn:hover {
-    background: var(--accent-hover);
+    background: #d35400;
     transform: scale(1.02);
 }
 
@@ -5868,7 +5868,7 @@ button, .btn, .action-btn, .download-btn, .search-btn {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent-color), #9b59b6);
+    background: linear-gradient(135deg, #e67e22, #9b59b6);
     color: white;
     display: flex;
     align-items: center;
