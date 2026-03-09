@@ -1896,10 +1896,16 @@ pool.query(`
         standard VARCHAR(255),
         duration VARCHAR(50),
         plan_data JSONB,
+        reading_content TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
 `).catch(err => console.error('Lesson plans table creation error:', err));
+
+// Add reading_content column if it doesn't exist (for existing databases)
+pool.query(`
+    ALTER TABLE lesson_plans ADD COLUMN IF NOT EXISTS reading_content TEXT
+`).catch(err => console.error('Adding reading_content column:', err));
 
 // Get lesson context from S3 + terminal context
 app.get('/api/lesson/context', authenticateToken, async (req, res) => {
@@ -2207,13 +2213,14 @@ Please create an engaging, comprehensive lesson plan in the JSON format specifie
             };
         }
         
-        // Save to database
-        await pool.query(
+        // Save to database and get the ID
+        const insertResult = await pool.query(
             `INSERT INTO lesson_plans (user_email, subject, grade, topic, standard, duration, plan_data) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
             [req.user.email, lessonData.subject, lessonData.grade, lessonData.topic, 
              lessonData.standard, lessonData.duration, JSON.stringify(lessonPlan)]
         );
+        const lessonId = insertResult.rows[0].id;
         
         // Update teacher context with lesson metadata (shared with ChaCha terminal)
         try {
@@ -2261,7 +2268,7 @@ Please create an engaging, comprehensive lesson plan in the JSON format specifie
             console.log('Failed to update lesson context:', e);
         }
         
-        res.json({ lessonPlan });
+        res.json({ lessonPlan, lessonId });
         
     } catch (error) {
         console.error('Lesson generate error:', error);
@@ -2302,7 +2309,8 @@ app.get('/api/lesson/:id', authenticateToken, async (req, res) => {
                 topic: lesson.topic,
                 standard: lesson.standard,
                 duration: lesson.duration
-            }
+            },
+            readingContent: lesson.reading_content || null
         });
     } catch (error) {
         console.error('Get lesson error:', error);
@@ -2723,6 +2731,27 @@ Make it interesting and relatable for ${lessonData.grade} students.`;
     } catch (error) {
         console.error('Reading generation error:', error);
         res.status(500).json({ error: 'Failed to generate reading material: ' + error.message });
+    }
+});
+
+// Save reading content to an existing lesson
+app.post('/api/lesson/save-reading', authenticateToken, async (req, res) => {
+    try {
+        const { lessonId, readingContent } = req.body;
+        
+        if (!lessonId || !readingContent) {
+            return res.status(400).json({ error: 'Lesson ID and reading content required' });
+        }
+        
+        await pool.query(
+            'UPDATE lesson_plans SET reading_content = $1, updated_at = NOW() WHERE id = $2 AND user_email = $3',
+            [readingContent, lessonId, req.user.email]
+        );
+        
+        res.json({ success: true, message: 'Reading content saved' });
+    } catch (error) {
+        console.error('Save reading error:', error);
+        res.status(500).json({ error: 'Failed to save reading content' });
     }
 });
 

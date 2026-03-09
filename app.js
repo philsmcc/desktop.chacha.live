@@ -6545,6 +6545,7 @@ Start by introducing yourself warmly and asking their name if you don't know it 
         let conversationHistory = [];
         let lessonData = { subject: '', grade: '', topic: '', standard: '', duration: '', objectives: [], requirements: '', teacherContext: null };
         let generatedPlan = null;
+        let currentLessonId = null;
         
         const chatMessages = windowEl.querySelector('#lesson-chat-messages');
         const chatInput = windowEl.querySelector('#lesson-chat-input');
@@ -6622,6 +6623,8 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 progressFill.style.width = '100%';
                 statusEl.textContent = 'Complete!';
                 generatedPlan = response.lessonPlan;
+                currentLessonId = response.lessonId;
+                console.log('Lesson saved with ID:', currentLessonId);
                 setTimeout(() => { goToStep(3); setTimeout(() => renderLessonPlan(generatedPlan), 50); }, 500);
             } catch (error) { clearInterval(stageInterval); statusEl.textContent = 'Error: ' + error.message; progressFill.style.backgroundColor = '#e74c3c'; }
         }
@@ -6819,6 +6822,9 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 const lesson = await self.api('/lesson/' + id);
                 generatedPlan = lesson.plan;
                 lessonData = lesson.data;
+                currentLessonId = parseInt(id);
+                generatedReading = lesson.readingContent || null;
+                console.log('Loaded lesson ID:', currentLessonId, 'Has reading:', !!generatedReading);
                 renderLessonPlan(generatedPlan);
                 goToStep(3);
             } catch (error) { self.showNotification('Failed to load lesson', 'error'); }
@@ -6828,10 +6834,21 @@ Start by introducing yourself warmly and asking their name if you don't know it 
         // Reading material state
         let generatedReading = null;
         
-        async function generateReadingMaterial() {
-            console.log('generateReadingMaterial called, generatedPlan:', generatedPlan);
+        async function generateReadingMaterial(forceRegenerate = false) {
+            console.log('generateReadingMaterial called, generatedPlan:', generatedPlan, 'existing reading:', !!generatedReading);
             if (!generatedPlan) {
                 self.showNotification('Please generate a lesson plan first', 'warning');
+                return;
+            }
+            
+            goToStep(6);
+            const statusEl = windowEl.querySelector('#reading-status');
+            const contentEl = windowEl.querySelector('#reading-content');
+            
+            // If we already have reading content and not forcing regeneration, just display it
+            if (generatedReading && !forceRegenerate) {
+                statusEl.innerHTML = '<p class="success-status">✅ Reading material loaded from saved lesson</p>';
+                contentEl.innerHTML = '<div class="reading-preview">' + generatedReading + '</div>';
                 return;
             }
             
@@ -6840,10 +6857,6 @@ Start by introducing yourself warmly and asking their name if you don't know it 
             const regenerateBtn = windowEl.querySelector('#reading-regenerate-btn');
             if (generateReadingBtn) generateReadingBtn.disabled = true;
             if (regenerateBtn) regenerateBtn.disabled = true;
-            
-            goToStep(6);
-            const statusEl = windowEl.querySelector('#reading-status');
-            const contentEl = windowEl.querySelector('#reading-content');
             
             statusEl.innerHTML = '<div class="generating-reading"><div class="spinner"></div><p>Generating student reading material aligned with standards... This may take 30-60 seconds.</p></div>';
             contentEl.innerHTML = '<div class="loading-placeholder"><p>Please wait while the AI creates comprehensive reading material for your students...</p></div>';
@@ -6859,6 +6872,19 @@ Start by introducing yourself warmly and asking their name if you don't know it 
                 
                 // Display the reading content with styling
                 contentEl.innerHTML = '<div class="reading-preview">' + response.readingContent + '</div>';
+                
+                // Save reading to database if we have a lesson ID
+                if (currentLessonId) {
+                    try {
+                        await self.api('/lesson/save-reading', {
+                            method: 'POST',
+                            body: JSON.stringify({ lessonId: currentLessonId, readingContent: generatedReading })
+                        });
+                        console.log('Reading content saved to lesson', currentLessonId);
+                    } catch (saveErr) {
+                        console.error('Failed to save reading:', saveErr);
+                    }
+                }
                 
                 // Re-enable buttons
                 if (generateReadingBtn) generateReadingBtn.disabled = false;
@@ -6903,7 +6929,7 @@ sendBtn.addEventListener('click', sendMessage);
             console.error('Could not find #lesson-generate-reading button');
         }
         windowEl.querySelector('#reading-back-btn').addEventListener('click', () => goToStep(3));
-        windowEl.querySelector('#reading-regenerate-btn').addEventListener('click', generateReadingMaterial);
+        windowEl.querySelector('#reading-regenerate-btn').addEventListener('click', () => generateReadingMaterial(true));
         windowEl.querySelector('#reading-continue-btn').addEventListener('click', () => goToStep(5));
         
 
