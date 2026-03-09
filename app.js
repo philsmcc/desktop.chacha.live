@@ -99,6 +99,13 @@ class DesktopOS {
                 icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="9" y1="10" x2="15" y2="10"/></svg>',
                 defaultSize: { width: 450, height: 600 },
                 content: () => this.renderShoutoutsApp()
+            },
+            {
+                id: "printquizzes",
+                name: "Print Quizzes",
+                icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>',
+                defaultSize: { width: 900, height: 700 },
+                content: () => this.renderPrintQuizzesApp()
             }
         ];
         
@@ -1560,6 +1567,10 @@ class DesktopOS {
         
         if (appId === "shoutouts") {
             setTimeout(() => this.initShoutouts(windowEl), 50);
+        }
+        
+        if (appId === "printquizzes") {
+            setTimeout(() => this.initPrintQuizzes(windowEl), 50);
         }
     }
 
@@ -6619,6 +6630,300 @@ Start by introducing yourself warmly and asking their name if you don't know it 
         windowEl.addEventListener('windowclose', () => {
             clearInterval(refreshInterval);
         });
+    }
+
+// ===== PRINT QUIZZES APP =====
+    
+    renderPrintQuizzesApp() {
+        return '<div class="print-quizzes-app">' +
+            '<div class="pq-header">' +
+                '<h2>🖨️ Print Quizzes</h2>' +
+                '<p>Select a lesson to print its quiz</p>' +
+            '</div>' +
+            '<div class="pq-content">' +
+                '<div class="pq-sidebar">' +
+                    '<h3>Lessons with Quizzes</h3>' +
+                    '<div class="pq-lesson-list" id="pq-lesson-list">' +
+                        '<p class="loading-text">Loading lessons...</p>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="pq-preview">' +
+                    '<div class="pq-preview-placeholder" id="pq-preview-area">' +
+                        '<p>👈 Select a lesson from the list to preview its quiz</p>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
+    }
+    
+    initPrintQuizzes(windowEl) {
+        const self = this;
+        const lessonListEl = windowEl.querySelector('#pq-lesson-list');
+        const previewAreaEl = windowEl.querySelector('#pq-preview-area');
+        let selectedLesson = null;
+        
+        // Load lessons with quizzes
+        async function loadLessonsWithQuizzes() {
+            try {
+                const response = await fetch('/api/lesson/with-quizzes', {
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                });
+                
+                if (!response.ok) throw new Error('Failed to load lessons');
+                
+                const data = await response.json();
+                
+                if (data.lessons && data.lessons.length > 0) {
+                    lessonListEl.innerHTML = data.lessons.map(lesson => {
+                        const date = new Date(lesson.created_at).toLocaleDateString();
+                        const questionCount = lesson.quiz_data?.questions?.length || 0;
+                        return '<div class="pq-lesson-item" data-id="' + lesson.id + '">' +
+                            '<div class="pq-lesson-title">' + escapeHtml(lesson.topic || 'Untitled') + '</div>' +
+                            '<div class="pq-lesson-meta">' +
+                                '<span>' + escapeHtml(lesson.subject || '') + '</span>' +
+                                '<span>' + escapeHtml(lesson.grade || '') + '</span>' +
+                                '<span>' + questionCount + ' questions</span>' +
+                            '</div>' +
+                            '<div class="pq-lesson-date">' + date + '</div>' +
+                        '</div>';
+                    }).join('');
+                    
+                    // Add click handlers
+                    lessonListEl.querySelectorAll('.pq-lesson-item').forEach(item => {
+                        item.addEventListener('click', () => {
+                            lessonListEl.querySelectorAll('.pq-lesson-item').forEach(i => i.classList.remove('selected'));
+                            item.classList.add('selected');
+                            loadQuizPreview(item.dataset.id);
+                        });
+                    });
+                } else {
+                    lessonListEl.innerHTML = '<div class="pq-no-quizzes">' +
+                        '<p>📝 No quizzes found</p>' +
+                        '<p>To create a quiz:</p>' +
+                        '<ol>' +
+                            '<li>Open the <strong>Lesson Planner</strong> app</li>' +
+                            '<li>Create or select a lesson plan</li>' +
+                            '<li>Click <strong>Generate Quiz</strong></li>' +
+                            '<li>Save the quiz</li>' +
+                        '</ol>' +
+                    '</div>';
+                }
+            } catch (error) {
+                console.error('Error loading lessons:', error);
+                lessonListEl.innerHTML = '<p class="error-text">Failed to load lessons</p>';
+            }
+        }
+        
+        // Load quiz preview
+        async function loadQuizPreview(lessonId) {
+            previewAreaEl.innerHTML = '<p class="loading-text">Loading quiz...</p>';
+            
+            try {
+                const response = await fetch('/api/lesson/' + lessonId, {
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                });
+                
+                if (!response.ok) throw new Error('Failed to load lesson');
+                
+                const data = await response.json();
+                selectedLesson = data;
+                
+                if (!data.quizData || !data.quizData.questions || data.quizData.questions.length === 0) {
+                    previewAreaEl.innerHTML = '<div class="pq-no-quiz-msg">' +
+                        '<p>⚠️ This lesson does not have a quiz yet.</p>' +
+                        '<p>Open the Lesson Planner to generate a quiz for this lesson.</p>' +
+                    '</div>';
+                    return;
+                }
+                
+                renderQuizPreview(data);
+            } catch (error) {
+                console.error('Error loading quiz:', error);
+                previewAreaEl.innerHTML = '<p class="error-text">Failed to load quiz</p>';
+            }
+        }
+        
+        // Render quiz preview
+        function renderQuizPreview(lessonData) {
+            const quiz = lessonData.quizData;
+            const questions = quiz.questions || [];
+            const quizCode = quiz.quizCode || '------';
+            const title = lessonData.lessonPlan?.title || lessonData.topic || 'Quiz';
+            
+            // Split questions into two columns (6 each max)
+            const col1 = questions.slice(0, 6);
+            const col2 = questions.slice(6, 12);
+            
+            let html = '<div class="pq-quiz-preview">' +
+                '<div class="pq-preview-header">' +
+                    '<button class="pq-print-btn" id="pq-print-btn">🖨️ Print Quiz</button>' +
+                    '<button class="pq-print-key-btn" id="pq-print-key-btn">📋 Print Answer Key</button>' +
+                '</div>' +
+                '<div class="pq-quiz-paper" id="pq-quiz-paper">' +
+                    '<div class="quiz-header-print">' +
+                        '<div class="quiz-title-print">' + escapeHtml(title) + '</div>' +
+                        '<div class="quiz-code-print">Quiz Code: ' + quizCode + '</div>' +
+                    '</div>' +
+                    '<div class="quiz-student-name-print">' +
+                        '<label>Student Name: </label>' +
+                        '<span class="name-line">_________________________________</span>' +
+                    '</div>' +
+                    '<div class="quiz-columns">' +
+                        '<div class="quiz-column">' + renderQuestionColumn(col1, 0) + '</div>' +
+                        '<div class="quiz-column">' + renderQuestionColumn(col2, 6) + '</div>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+            
+            previewAreaEl.innerHTML = html;
+            
+            // Print button handlers
+            windowEl.querySelector('#pq-print-btn').addEventListener('click', () => printQuiz(false));
+            windowEl.querySelector('#pq-print-key-btn').addEventListener('click', () => printQuiz(true));
+        }
+        
+        function renderQuestionColumn(questions, startIndex) {
+            if (questions.length === 0) return '';
+            
+            return questions.map((q, idx) => {
+                const num = startIndex + idx + 1;
+                let html = '<div class="quiz-question-print">' +
+                    '<div class="q-number">' + num + '.</div>' +
+                    '<div class="q-content">' +
+                        '<div class="q-text">' + escapeHtml(q.question) + '</div>';
+                
+                if (q.type === 'Multiple Choice' && q.options) {
+                    html += '<div class="q-options">';
+                    q.options.forEach((opt, optIdx) => {
+                        const letter = String.fromCharCode(65 + optIdx);
+                        html += '<div class="q-option">' +
+                            '<span class="opt-letter">' + letter + '.</span> ' +
+                            '<span class="opt-text">' + escapeHtml(opt) + '</span>' +
+                        '</div>';
+                    });
+                    html += '</div>';
+                } else if (q.type === 'True/False') {
+                    html += '<div class="q-tf">' +
+                        '<span class="tf-choice">○ True</span>' +
+                        '<span class="tf-choice">○ False</span>' +
+                    '</div>';
+                } else {
+                    html += '<div class="q-answer-line">____________________________________</div>';
+                }
+                
+                html += '</div></div>';
+                return html;
+            }).join('');
+        }
+        
+        function printQuiz(includeAnswers) {
+            const quizPaper = windowEl.querySelector('#pq-quiz-paper');
+            if (!quizPaper || !selectedLesson) return;
+            
+            const quiz = selectedLesson.quizData;
+            const questions = quiz.questions || [];
+            const quizCode = quiz.quizCode || '------';
+            const title = selectedLesson.lessonPlan?.title || selectedLesson.topic || 'Quiz';
+            
+            const col1 = questions.slice(0, 6);
+            const col2 = questions.slice(6, 12);
+            
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+    <title>${includeAnswers ? 'Answer Key - ' : ''}${title}</title>
+    <style>
+        @page { margin: 0.5in; size: letter; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.4; }
+        .quiz-paper { padding: 20px; max-width: 8.5in; margin: 0 auto; }
+        .quiz-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        .quiz-title { font-size: 18pt; font-weight: bold; flex: 1; }
+        .quiz-code { font-size: 12pt; font-weight: bold; text-align: right; }
+        .quiz-code span { font-family: monospace; letter-spacing: 2px; }
+        .student-name { margin-bottom: 20px; font-size: 12pt; }
+        .student-name .line { display: inline-block; border-bottom: 1px solid #333; width: 300px; margin-left: 10px; }
+        .quiz-columns { display: flex; gap: 30px; }
+        .quiz-column { flex: 1; }
+        .question { margin-bottom: 15px; display: flex; gap: 8px; }
+        .q-num { font-weight: bold; min-width: 20px; }
+        .q-body { flex: 1; }
+        .q-text { margin-bottom: 6px; }
+        .options { margin-left: 5px; }
+        .option { margin-bottom: 3px; }
+        .tf-options { display: flex; gap: 20px; margin-top: 5px; }
+        .answer-line { border-bottom: 1px solid #999; margin-top: 8px; height: 20px; }
+        .answer-key { color: #c00; font-weight: bold; margin-top: 5px; padding: 3px 8px; background: #ffe0e0; border-radius: 3px; display: inline-block; }
+        ${includeAnswers ? '' : '.answer-key { display: none; }'}
+        @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body>
+    <div class="quiz-paper">
+        <div class="quiz-header">
+            <div class="quiz-title">${includeAnswers ? '📋 ANSWER KEY: ' : ''}${escapeHtml(title)}</div>
+            <div class="quiz-code">Quiz Code: <span>${quizCode}</span></div>
+        </div>
+        <div class="student-name">
+            Student Name: <span class="line"></span>
+        </div>
+        <div class="quiz-columns">
+            <div class="quiz-column">
+                ${renderPrintColumn(col1, 0, includeAnswers)}
+            </div>
+            <div class="quiz-column">
+                ${renderPrintColumn(col2, 6, includeAnswers)}
+            </div>
+        </div>
+    </div>
+    <script>window.onload = function() { window.print(); }</script>
+</body>
+</html>`);
+            printWindow.document.close();
+        }
+        
+        function renderPrintColumn(questions, startIndex, showAnswers) {
+            if (questions.length === 0) return '';
+            
+            return questions.map((q, idx) => {
+                const num = startIndex + idx + 1;
+                let html = '<div class="question"><div class="q-num">' + num + '.</div><div class="q-body">' +
+                    '<div class="q-text">' + escapeHtml(q.question) + '</div>';
+                
+                if (q.type === 'Multiple Choice' && q.options) {
+                    html += '<div class="options">';
+                    q.options.forEach((opt, optIdx) => {
+                        const letter = String.fromCharCode(65 + optIdx);
+                        html += '<div class="option">' + letter + '. ' + escapeHtml(opt) + '</div>';
+                    });
+                    html += '</div>';
+                } else if (q.type === 'True/False') {
+                    html += '<div class="tf-options"><span>○ True</span><span>○ False</span></div>';
+                } else {
+                    html += '<div class="answer-line"></div>';
+                }
+                
+                if (showAnswers) {
+                    html += '<div class="answer-key">Answer: ' + escapeHtml(q.answer) + '</div>';
+                }
+                
+                html += '</div></div>';
+                return html;
+            }).join('');
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Initial load
+        loadLessonsWithQuizzes();
     }
 
 // ===== LESSON PLANNER APP =====

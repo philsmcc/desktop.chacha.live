@@ -2365,6 +2365,20 @@ Please create an engaging, comprehensive lesson plan in the JSON format specifie
     }
 });
 
+// Get lessons that have quizzes
+app.get('/api/lesson/with-quizzes', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT id, subject, grade, topic, quiz_data, created_at FROM lesson_plans WHERE user_email = $1 AND quiz_data IS NOT NULL ORDER BY created_at DESC LIMIT 50',
+            [req.user.email]
+        );
+        res.json({ lessons: result.rows });
+    } catch (error) {
+        console.error('Lessons with quizzes error:', error);
+        res.status(500).json({ error: 'Failed to get lessons with quizzes' });
+    }
+});
+
 // Get lesson history
 app.get('/api/lesson/history', authenticateToken, async (req, res) => {
     try {
